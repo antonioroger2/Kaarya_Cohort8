@@ -4,21 +4,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
-// ============================================================================
-// SECTION: Main App Initialization
-// ============================================================================
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
     options: const FirebaseOptions(
-      apiKey: "AIzaSyDm4xvZbc35ZNucXFoIBwdVyLd8h22NI1o",
-      authDomain: "cohort8-f5139.firebaseapp.com",
-      projectId: "cohort8-f5139",
-      storageBucket: "cohort8-f5139.appspot.com", // Corrected storage bucket
-      messagingSenderId: "1006872143391",
-      appId: "1:1006872143391:web:08873239c279e68f12172a"
+      apiKey: "",
+      authDomain: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
     ),
   );
 
@@ -34,17 +30,58 @@ class KaaryaConnectApp extends StatelessWidget {
       title: 'Kaarya Connect',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        primarySwatch: Colors.indigo,
         useMaterial3: true,
+        scaffoldBackgroundColor: Colors.grey[50],
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.indigo,
+          foregroundColor: Colors.white,
+          elevation: 1,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.indigo,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
       ),
-      home: const AuthScreen(),
+      home: const AuthWrapper(),
     );
   }
 }
 
-// ============================================================================
-// SECTION: Authentication Screen
-// ============================================================================
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({Key? key}) : super(key: key);
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasData) {
+          return FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance.collection('workers').doc(snapshot.data!.uid).get(),
+            builder: (context, workerSnapshot) {
+              if (workerSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+              if (workerSnapshot.hasData && workerSnapshot.data!.exists) {
+                return WorkerDashboard(workerId: snapshot.data!.uid);
+              }
+              return UserDashboard(userId: snapshot.data!.uid);
+            },
+          );
+        }
+        return const AuthScreen();
+      },
+    );
+  }
+}
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({Key? key}) : super(key: key);
@@ -57,25 +94,25 @@ class _AuthScreenState extends State<AuthScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isLoginMode = true;
   final _passwordController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
+  final _pinController = TextEditingController();
   bool _isWorker = false;
   bool _isLoading = false;
 
   @override
   void dispose() {
     _passwordController.dispose();
-    _confirmPasswordController.dispose();
     _phoneController.dispose();
     _nameController.dispose();
+    _pinController.dispose();
     super.dispose();
   }
 
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
     );
   }
 
@@ -112,154 +149,181 @@ class _AuthScreenState extends State<AuthScreen> {
 
     if (_isWorker) {
       await FirebaseFirestore.instance.collection('workers').doc(uid).set({
-        'id': uid, 'name': _nameController.text, 'phone': _phoneController.text,
-        'availability': 'Y', 'totalBookings': 0, 'completedBookings': 0,
-        'avgRating': 0.0, 'trustScore': 5.0, 'works': [],
-        'createdAt': Timestamp.now(), 'perHourCharge': 0, 'perDayCharge': 0,
+        'id': uid,
+        'name': _nameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'pin': _pinController.text.trim(),
+        'altPhone': '',
+        'availability': 'Y',
+        'totalBookings': 0,
+        'completedBookings': 0,
+        'fourPlusRatings': 0,
+        'avgRating': 0.0,
+        'trustScore': 5.0,
+        'workCategories': [],
+        'idDetails': {'type': 'Aadhar', 'number': ''},
+        'experience': 0,
+        'profileDescription': '',
+        'perHourCharge': 50,
+        'perDayCharge': 400,
+        'createdAt': Timestamp.now(),
       });
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => WorkerDashboard(workerId: uid)),
-      );
     } else {
       await FirebaseFirestore.instance.collection('users').doc(uid).set({
-        'id': uid, 'name': _nameController.text, 'phone': _phoneController.text,
-        'trustScore': 5.0, 'userType': 'Standard', 'createdAt': Timestamp.now(),
+        'id': uid,
+        'name': _nameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'pin': _pinController.text.trim(),
+        'altPhone': '',
+        'email': '',
+        'locality': '',
+        'trustScore': 5.0,
+        'userType': 'Standard',
+        'createdAt': Timestamp.now(),
       });
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => UserDashboard(userId: uid)),
-      );
     }
   }
 
   Future<void> _login() async {
     final email = '${_phoneController.text.trim()}@kaaryaconnect.app';
-    final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+    await FirebaseAuth.instance.signInWithEmailAndPassword(
       email: email,
       password: _passwordController.text,
     );
-    final uid = userCredential.user!.uid;
-
-    final workerDoc = await FirebaseFirestore.instance.collection('workers').doc(uid).get();
-
-    if (!mounted) return;
-    if (workerDoc.exists) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => WorkerDashboard(workerId: uid)),
-      );
-    } else {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => UserDashboard(userId: uid)),
-      );
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Kaarya Connect')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              const SizedBox(height: 40),
-              Text(
-                _isLoginMode ? 'Welcome Back!' : 'Create an Account',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 30),
-              if (!_isLoginMode)
-                TextFormField(
-                  controller: _nameController,
-                  decoration: InputDecoration(
-                    labelText: 'Full Name',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 20),
+                Text(
+                  _isLoginMode ? 'Welcome Back!' : 'Join Our Network',
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 30),
+                if (!_isLoginMode)
+                  TextFormField(
+                    controller: _nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Full Name',
+                      prefixIcon: const Icon(Icons.person_outline),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    validator: (value) => value!.trim().isEmpty ? 'Please enter your name' : null,
                   ),
-                  validator: (value) => value!.isEmpty ? 'Please enter your name' : null,
-                ),
-              if (!_isLoginMode) const SizedBox(height: 16),
-              TextFormField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: 'Use as your login ID',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                validator: (value) => value!.isEmpty ? 'Please enter a phone number' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: 'Password',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Please enter a password';
-                  if (value.length < 6) return 'Password must be at least 6 characters';
-                  return null;
-                },
-              ),
-              if (!_isLoginMode) const SizedBox(height: 16),
-              if (!_isLoginMode)
+                if (!_isLoginMode) const SizedBox(height: 16),
                 TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: true,
+                  controller: _phoneController,
+                  keyboardType: TextInputType.phone,
                   decoration: InputDecoration(
-                    labelText: 'Confirm Password',
+                    labelText: '10-Digit Phone Number',
+                    prefixIcon: const Icon(Icons.phone_outlined),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   validator: (value) {
-                    if (value != _passwordController.text) return 'Passwords do not match';
+                    if (value == null || value.trim().isEmpty) return 'Please enter a phone number';
+                    if (value.length != 10) return 'Enter a valid 10-digit phone number';
                     return null;
                   },
                 ),
-              const SizedBox(height: 20),
-              if (!_isLoginMode)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
+                const SizedBox(height: 16),
+                 if (!_isLoginMode)
+                  TextFormField(
+                    controller: _pinController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: '6-Digit Pincode',
+                      prefixIcon: const Icon(Icons.location_on_outlined), 
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) return 'Please enter a pincode';
+                      if (value.length != 6) return 'Enter a valid 6-digit pincode';
+                      return null;
+                    },
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(child: Text(_isWorker ? 'Worker Mode' : 'User Mode')),
-                      Switch(
-                        value: _isWorker,
-                        onChanged: (val) => setState(() => _isWorker = val),
-                      ),
-                    ],
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    prefixIcon: const Icon(Icons.lock_outline),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Please enter a password';
+                    if (value.length < 6) return 'Password must be at least 6 characters';
+                    return null;
+                  },
+                ),
+                if (!_isLoginMode) const SizedBox(height: 16),
+                if (!_isLoginMode)
+                  TextFormField(
+                    obscureText: true,
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    validator: (value) {
+                      if (value != _passwordController.text) return 'Passwords do not match';
+                      return null;
+                    },
+                  ),
+                const SizedBox(height: 20),
+                if (!_isLoginMode)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('I am a User'),
+                        Switch(
+                          value: _isWorker,
+                          onChanged: (val) => setState(() => _isWorker = val),
+                        ),
+                        const Text('I am a Worker'),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _submitAuthForm,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            height: 20, width: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(_isLoginMode ? 'Login' : 'Sign Up', style: const TextStyle(fontSize: 16)),
                   ),
                 ),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _submitAuthForm,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : Text(_isLoginMode ? 'Login' : 'Sign Up'),
+                TextButton(
+                  onPressed: () => setState(() => _isLoginMode = !_isLoginMode),
+                  child: Text(_isLoginMode
+                      ? 'Don\'t have an account? Sign Up'
+                      : 'Already have an account? Login'),
                 ),
-              ),
-              TextButton(
-                onPressed: () => setState(() => _isLoginMode = !_isLoginMode),
-                child: Text(_isLoginMode
-                    ? 'Don\'t have an account? Sign Up'
-                    : 'Already have an account? Login'),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -267,11 +331,6 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
-// ============================================================================
-// SECTION: User Screens
-// ============================================================================
-
-// FILE: lib/screens/user/user_dashboard.dart
 class UserDashboard extends StatefulWidget {
   final String userId;
   const UserDashboard({Key? key, required this.userId}) : super(key: key);
@@ -282,17 +341,22 @@ class UserDashboard extends StatefulWidget {
 
 class _UserDashboardState extends State<UserDashboard> {
   int _selectedIndex = 0;
+  late final List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      HomeScreen(userId: widget.userId),
+      BookingsScreen(userId: widget.userId),
+      ProfileScreen(userId: widget.userId, isWorker: false),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> screens = [
-      HomeScreen(userId: widget.userId),
-      BookingsScreen(userId: widget.userId),
-      ProfileScreen(userId: widget.userId),
-    ];
-
     return Scaffold(
-      body: screens[_selectedIndex],
+      body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         items: const [
@@ -306,7 +370,6 @@ class _UserDashboardState extends State<UserDashboard> {
   }
 }
 
-// FILE: lib/screens/user/home_screen.dart
 class HomeScreen extends StatefulWidget {
   final String userId;
   const HomeScreen({Key? key, required this.userId}) : super(key: key);
@@ -318,11 +381,27 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   String _selectedCategory = '';
+  String _userPin = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _getUserPin();
+  }
+
+  Future<void> _getUserPin() async {
+    final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
+    if (userDoc.exists) {
+      setState(() {
+        _userPin = userDoc.data()?['pin'] ?? '';
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Find Workers')),
+      appBar: AppBar(title: const Text('Find Local Workers')),
       body: Column(
         children: [
           Padding(
@@ -330,55 +409,89 @@ class _HomeScreenState extends State<HomeScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by name or skill',
+                hintText: 'Search by name or skill...',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onChanged: (_) => setState(() {}),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: 8,
-              children: ['Plumber', 'Electrician', 'Handyman', 'Maid', 'Coolie']
-                  .map((cat) => FilterChip(
-                        label: Text(cat),
-                        selected: _selectedCategory == cat,
-                        onSelected: (sel) => setState(() => _selectedCategory = sel ? cat : ''),
-                      ))
+          SizedBox(
+            height: 50,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                'Plumber', 'Electrician', 'Carpenter', 'Maid', 'Movers', 'Mechanic', 'Cook', 'Babysitter'
+              ].map((cat) => Padding(
+                    padding: const EdgeInsets.only(right: 8.0),
+                    child: FilterChip(
+                      label: Text(cat),
+                      selected: _selectedCategory == cat,
+                      onSelected: (sel) => setState(() => _selectedCategory = sel ? cat : ''),
+                    ),
+                  ))
                   .toList(),
             ),
           ),
+          if (_selectedCategory.isNotEmpty && _userPin.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Text(
+                'Showing top workers for "$_selectedCategory" near your pincode: $_userPin',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ),
           const SizedBox(height: 12),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('workers')
-                  .where('availability', isEqualTo: 'Y')
-                  .snapshots(),
+              stream: FirebaseFirestore.instance.collection('workers').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('No workers available'));
+                  return const Center(child: Text('No workers available right now.'));
                 }
-                var workers = snapshot.data!.docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final name = (data['name'] ?? '').toString().toLowerCase();
-                  final searchText = _searchController.text.toLowerCase();
-                  if (searchText.isNotEmpty && !name.contains(searchText)) {
-                    return false;
-                  }
-                  if (_selectedCategory.isNotEmpty) {
-                    final works = data['works'] as List? ?? [];
-                    return works.any((w) => w['workType'] == _selectedCategory);
-                  }
-                  return true;
+
+                List<DocumentSnapshot> workers = snapshot.data!.docs;
+
+                workers = workers.where((doc) {
+                   final data = doc.data() as Map<String, dynamic>;
+                   if (data['availability'] != 'Y') return false;
+
+                   final name = (data['name'] ?? '').toString().toLowerCase();
+                   final searchText = _searchController.text.toLowerCase();
+                   if (searchText.isNotEmpty && !name.contains(searchText)) return false;
+
+                   if (_selectedCategory.isNotEmpty) {
+                     final categories = (data['workCategories'] as List?)?.map((e) => e['mainCategory'] as String).toList() ?? [];
+                     if (!categories.contains(_selectedCategory)) return false;
+                   }
+                   return true;
                 }).toList();
 
+                if (_userPin.isNotEmpty) {
+                  workers.sort((a, b) {
+                    final dataA = a.data() as Map<String, dynamic>;
+                    final dataB = b.data() as Map<String, dynamic>;
+                    final pinA = dataA['pin'] ?? '';
+                    final pinB = dataB['pin'] ?? '';
+                    final ratingA = dataA['avgRating'] ?? 0.0;
+                    final ratingB = dataB['avgRating'] ?? 0.0;
+
+                    if (pinA == _userPin && pinB != _userPin) return -1;
+                    if (pinA != _userPin && pinB == _userPin) return 1;
+                    return ratingB.compareTo(ratingA); 
+                  });
+                }
+
+                if (workers.isEmpty) {
+                   return const Center(child: Text('No workers found matching your criteria.'));
+                }
+
                 return ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 16),
                   itemCount: workers.length,
                   itemBuilder: (context, idx) {
                     final doc = workers[idx];
@@ -395,19 +508,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// FILE: lib/screens/user/booking_screen.dart
-class BookingScreen extends StatefulWidget {
+class BookingCreationScreen extends StatefulWidget {
   final String userId;
   final String workerId;
   final String workerName;
+  final String workerPhone;
 
-  const BookingScreen({Key? key, required this.userId, required this.workerId, required this.workerName}) : super(key: key);
+  const BookingCreationScreen({
+    Key? key, 
+    required this.userId, 
+    required this.workerId, 
+    required this.workerName,
+    required this.workerPhone,
+  }) : super(key: key);
 
   @override
-  State<BookingScreen> createState() => _BookingScreenState();
+  State<BookingCreationScreen> createState() => _BookingCreationScreenState();
 }
 
-class _BookingScreenState extends State<BookingScreen> {
+class _BookingCreationScreenState extends State<BookingCreationScreen> {
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
   int _hours = 2;
@@ -417,22 +536,47 @@ class _BookingScreenState extends State<BookingScreen> {
     setState(() => _isLoading = true);
     try {
       final workerSnap = await FirebaseFirestore.instance.collection('workers').doc(widget.workerId).get();
-      final hourlyRate = (workerSnap.data()?['perHourCharge'] ?? 500).toDouble();
+      final userSnap = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
+
+      if (!workerSnap.exists || !userSnap.exists) {
+        throw Exception("User or worker not found.");
+      }
+
+      final workerData = workerSnap.data()!;
+      final userData = userSnap.data()!;
+
+      final hourlyRate = (workerData['perHourCharge'] ?? 500).toDouble();
       final wage = hourlyRate * _hours;
 
       await FirebaseFirestore.instance.collection('bookings').add({
-        'userId': widget.userId, 'workerId': widget.workerId,
-        'bookingDate': Timestamp.fromDate(_selectedDate),
-        'fromTime': _selectedTime.format(context), 'timeSlot': _hours,
-        'bookingType': 'Hourly', 'wage': wage, 'status': 'Scheduled',
+        'userId': widget.userId,
+        'workerId': widget.workerId,
+        'userInfo': {
+          'name': userData['name'],
+          'phone': userData['phone'],
+        },
+        'workerInfo': {
+          'name': workerData['name'],
+          'phone': workerData['phone'],
+        },
+        'bookingDate': Timestamp.fromDate(DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute)),
+        'timeSlot': _hours,
+        'bookingType': 'Hourly',
+        'wage': wage,
+        'status': 'Scheduled',
         'createdAt': Timestamp.now(),
+        'remarks': [
+          { 'log': 'Booking created by user.', 'timestamp': Timestamp.now() }
+        ],
+        'rating': 0,
+        'review': ''
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Booking confirmed!')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Booking request sent!'), backgroundColor: Colors.green,));
       Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent,));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -447,13 +591,13 @@ class _BookingScreenState extends State<BookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Select Date', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Select Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.calendar_today),
-                title: Text(DateFormat('MMM dd, yyyy').format(_selectedDate)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                title: Text(DateFormat('MMMM dd, yyyy').format(_selectedDate)),
+                trailing: const Icon(Icons.arrow_drop_down),
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
@@ -468,13 +612,13 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text('Start Time', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Select Start Time', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.schedule),
                 title: Text(_selectedTime.format(context)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                trailing: const Icon(Icons.arrow_drop_down),
                 onTap: () async {
                   final picked = await showTimePicker(
                     context: context,
@@ -487,7 +631,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ),
             ),
             const SizedBox(height: 20),
-            const Text('Duration (Hours)', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Select Duration (Hours)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
               child: Padding(
@@ -496,28 +640,28 @@ class _BookingScreenState extends State<BookingScreen> {
                   children: [
                     IconButton(
                       onPressed: _hours > 1 ? () => setState(() => _hours--) : null,
-                      icon: const Icon(Icons.remove),
+                      icon: const Icon(Icons.remove_circle_outline),
                     ),
                     Expanded(
-                      child: Text('$_hours hours', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+                      child: Text('$_hours hours', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                     IconButton(
                       onPressed: () => setState(() => _hours++),
-                      icon: const Icon(Icons.add),
+                      icon: const Icon(Icons.add_circle_outline),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _confirmBooking,
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
                 child: _isLoading
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('Confirm Booking'),
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white,))
+                    : const Text('Send Booking Request'),
               ),
             ),
           ],
@@ -527,143 +671,485 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 }
 
-// FILE: lib/screens/user/bookings_screen.dart
-class BookingsScreen extends StatelessWidget {
+class BookingsScreen extends StatefulWidget {
   final String userId;
   const BookingsScreen({Key? key, required this.userId}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('My Bookings')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where('userId', isEqualTo: userId)
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('You have no bookings yet.'));
-          }
-          return ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, idx) {
-              final booking = snapshot.data!.docs[idx];
-              final data = booking.data() as Map<String, dynamic>;
-              return BookingTile(bookingData: data, bookingId: booking.id);
-            },
-          );
-        },
-      ),
-    );
-  }
+  State<BookingsScreen> createState() => _BookingsScreenState();
 }
 
-// FILE: lib/screens/user/profile_screen.dart
-class ProfileScreen extends StatelessWidget {
-  final String userId;
-  const ProfileScreen({Key? key, required this.userId}) : super(key: key);
+class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: const Text('My Bookings'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'UPCOMING'),
+            Tab(text: 'PENDING'),
+            Tab(text: 'HISTORY'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildBookingsList(['Accepted']), 
+          _buildBookingsList(['Scheduled']), 
+          _buildBookingsList(['Completed', 'Cancelled', 'Rejected']), 
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookingsList(List<String> statuses) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('userId', isEqualTo: widget.userId)
+          .where('status', whereIn: statuses)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          String message;
+          if (statuses.contains('Accepted')) {
+            message = "You have no upcoming bookings.";
+          } else if (statuses.contains('Scheduled')) {
+            message = "You have no pending booking requests.";
+          } else {
+             message = "You have no past bookings.";
+          }
+          return Center(child: Text(message));
+        }
+
+        List<DocumentSnapshot> docs = snapshot.data!.docs;
+        docs.sort((a, b) {
+          Map<String, dynamic> dataA = a.data() as Map<String, dynamic>;
+          Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
+          Timestamp timeA = dataA['bookingDate'] ?? dataA['createdAt'];
+          Timestamp timeB = dataB['bookingDate'] ?? dataB['createdAt'];
+
+          if (statuses.contains('Accepted')) {
+            return timeA.compareTo(timeB); 
+          }
+          return timeB.compareTo(timeA); 
+        });
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: docs.length,
+          itemBuilder: (context, idx) {
+            final booking = docs[idx];
+            final data = booking.data() as Map<String, dynamic>;
+            return BookingTile(bookingData: data);
+          },
+        );
+      },
+    );
+  }
+}
+
+class ProfileScreen extends StatefulWidget {
+  final String userId;
+  final bool isWorker;
+  const ProfileScreen({Key? key, required this.userId, required this.isWorker}) : super(key: key);
+
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final _formKey = GlobalKey<FormState>();
+  bool _isEditing = false;
+
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _altPhoneController = TextEditingController();
+  final _pinController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _hourlyRateController = TextEditingController();
+  final _idNumberController = TextEditingController();
+
+  String _idType = 'Aadhar';
+  int _experience = 0;
+  List<Map<String, dynamic>> _workCategories = [];
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    _altPhoneController.dispose();
+    _pinController.dispose();
+    _descriptionController.dispose();
+    _hourlyRateController.dispose();
+    _idNumberController.dispose();
+    super.dispose();
+  }
+
+  void _loadUserData(Map<String, dynamic> data) {
+    _nameController.text = data['name'] ?? '';
+    _phoneController.text = data['phone'] ?? '';
+    _altPhoneController.text = data['altPhone'] ?? '';
+    _pinController.text = data['pin'] ?? '';
+
+    if (widget.isWorker) {
+      _descriptionController.text = data['profileDescription'] ?? '';
+      _hourlyRateController.text = (data['perHourCharge'] ?? 0).toString();
+      _idNumberController.text = data['idDetails']?['number'] ?? '';
+      _idType = data['idDetails']?['type'] ?? 'Aadhar';
+      _experience = data['experience'] ?? 0;
+      _workCategories = List<Map<String, dynamic>>.from(data['workCategories'] ?? []);
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final collection = widget.isWorker ? 'workers' : 'users';
+
+    Map<String, dynamic> dataToSave = {
+      'name': _nameController.text.trim(),
+      'phone': _phoneController.text.trim(),
+      'altPhone': _altPhoneController.text.trim(),
+      'pin': _pinController.text.trim(),
+    };
+
+    if (widget.isWorker) {
+      dataToSave.addAll({
+        'profileDescription': _descriptionController.text.trim(),
+        'perHourCharge': int.tryParse(_hourlyRateController.text) ?? 0,
+        'experience': _experience,
+        'idDetails': {
+          'type': _idType,
+          'number': _idNumberController.text.trim()
+        },
+        'workCategories': _workCategories,
+      });
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection(collection).doc(widget.userId).update(dataToSave);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully!'), backgroundColor: Colors.green));
+      setState(() => _isEditing = false);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save profile: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final collection = widget.isWorker ? 'workers' : 'users';
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.isWorker ? 'My Worker Profile' : 'My Profile'),
         actions: [
+          if (!_isEditing)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () => setState(() => _isEditing = true),
+            ),
           IconButton(
             icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
-              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const AuthScreen()),
-                (route) => false,
-              );
             },
           ),
         ],
       ),
-      body: FutureBuilder<DocumentSnapshot>(
-        future: FirebaseFirestore.instance.collection('users').doc(userId).get(),
+      body: StreamBuilder<DocumentSnapshot>(
+        stream: FirebaseFirestore.instance.collection(collection).doc(widget.userId).snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Profile not found.'));
+            return const Center(
+              child: Text(
+                "Profile data not found.\nPlease try restarting the app.",
+                textAlign: TextAlign.center,
+              ),
+            );
           }
           final data = snapshot.data!.data() as Map<String, dynamic>;
-          return Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
+
+          if (!_isEditing) {
+            _loadUserData(data);
+          }
+
+          return Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTextField(controller: _nameController, label: 'Full Name', icon: Icons.person),
+                  _buildTextField(controller: _phoneController, label: 'Primary Phone', icon: Icons.phone, keyboardType: TextInputType.phone),
+                  _buildTextField(controller: _altPhoneController, label: 'Alternate Phone', icon: Icons.phone_android, required: false, keyboardType: TextInputType.phone),
+                  _buildTextField(controller: _pinController, label: '6-Digit Pincode', icon: Icons.location_on, keyboardType: TextInputType.number),
+
+                  if (widget.isWorker) ...[
+                    const SizedBox(height: 16),
+                    const Divider(),
+                    const SizedBox(height: 16),
+                    Text('Worker Details', style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 16),
+
+                    _buildTextField(controller: _descriptionController, label: 'Profile Description (max 200 chars)', icon: Icons.description, maxLines: 3, maxLength: 200),
+                    _buildTextField(controller: _hourlyRateController, label: 'Hourly Rate (₹)', icon: Icons.price_change, keyboardType: TextInputType.number),
+
+                    _buildIdDetailsSection(),
+                    const SizedBox(height: 16),
+
+                     _buildExperienceSection(),
+                    const SizedBox(height: 16),
+
+                    _buildWorkCategoriesSection(),
+                  ],
+
+                  const SizedBox(height: 24),
+                  if (_isEditing)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        CircleAvatar(
-                          radius: 32,
-                          backgroundColor: Colors.blue[100],
-                          child: Text(
-                            (data['name'] ?? 'U')[0].toUpperCase(),
-                            style: const TextStyle(fontSize: 24, color: Colors.white),
-                          ),
+                        TextButton(
+                          onPressed: () => setState(() => _isEditing = false),
+                          child: const Text('Cancel'),
                         ),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(data['name'] ?? 'N/A', style: Theme.of(context).textTheme.titleLarge),
-                            const SizedBox(height: 4),
-                            Text(data['phone'] ?? 'N/A', style: Theme.of(context).textTheme.bodyMedium),
-                          ],
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: _saveProfile,
+                          child: const Text('Save Profile'),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text('Account Details', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.shield_outlined),
-                    title: const Text('Trust Score'),
-                    trailing: Text(
-                      '${data['trustScore'] ?? 5.0}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                  ),
-                ),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.card_membership),
-                    title: const Text('Plan'),
-                    trailing: Text(
-                      data['userType'] ?? 'Standard',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ],
+                    )
+                ],
+              ),
             ),
           );
         },
       ),
     );
   }
+
+  Widget _buildTextField({required TextEditingController controller, required String label, required IconData icon, bool required = true, int? maxLines, int? maxLength, TextInputType? keyboardType}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: TextFormField(
+        controller: controller,
+        enabled: _isEditing,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon),
+          border: const OutlineInputBorder(),
+          filled: !_isEditing,
+          fillColor: Colors.grey[200],
+        ),
+        maxLines: maxLines ?? 1,
+        maxLength: maxLength,
+        keyboardType: keyboardType,
+        validator: (value) {
+          if (required && (value == null || value.isEmpty)) {
+            return 'This field is required';
+          }
+          return null;
+        },
+      ),
+    );
+  }
+
+  Widget _buildIdDetailsSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('ID Verification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _idType,
+              items: ['Aadhar', 'PAN', 'Voter ID', 'Drivers License'].map((String value) {
+                return DropdownMenuItem<String>(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: _isEditing ? (newValue) {
+                setState(() {
+                  _idType = newValue!;
+                });
+              } : null,
+              decoration: const InputDecoration(
+                labelText: 'ID Type',
+                 border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(controller: _idNumberController, label: 'ID Number', icon: Icons.badge),
+            if (_idType == 'Drivers License')
+              const Padding(
+                padding: EdgeInsets.only(top: 8.0),
+                child: Text('Note: Driver\'s License is mandatory for driving-related jobs.', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+              )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExperienceSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+             const Text('Years of Experience:', style: TextStyle(fontSize: 16)),
+             const Spacer(),
+             if (_isEditing)
+              IconButton(onPressed: () => setState(() { if(_experience > 0) _experience--; }), icon: const Icon(Icons.remove)),
+             Text('$_experience years', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+             if (_isEditing)
+              IconButton(onPressed: () => setState(() => _experience++), icon: const Icon(Icons.add)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWorkCategoriesSection() {
+    return Card(
+       child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('My Skills', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                 if (_isEditing)
+                  IconButton(onPressed: _addWorkCategory, icon: const Icon(Icons.add_circle)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_workCategories.isEmpty)
+              const Text('No skills added yet. Tap the + to add one.')
+            else
+              ..._workCategories.asMap().entries.map((entry) {
+                int idx = entry.key;
+                Map<String, dynamic> category = entry.value;
+                return _buildCategoryEditor(idx, category);
+              }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addWorkCategory() {
+    setState(() {
+      _workCategories.add({'mainCategory': 'Plumber', 'tags': []});
+    });
+  }
+
+  Widget _buildCategoryEditor(int index, Map<String, dynamic> category) {
+    List<String> tags = List<String>.from(category['tags'] ?? []);
+    final tagController = TextEditingController();
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButton<String>(
+                    value: category['mainCategory'],
+                    isExpanded: true,
+                    items: ['Plumber', 'Electrician', 'Carpenter', 'Maid', 'Cook', 'Mechanic', 'Mover', 'Babysitter'].map((String value) {
+                      return DropdownMenuItem<String>(value: value, child: Text(value));
+                    }).toList(),
+                    onChanged: _isEditing ? (newValue) {
+                      setState(() {
+                        _workCategories[index]['mainCategory'] = newValue!;
+                      });
+                    } : null,
+                  ),
+                ),
+                if (_isEditing)
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.redAccent),
+                    onPressed: () {
+                      setState(() {
+                        _workCategories.removeAt(index);
+                      });
+                    },
+                  )
+              ],
+            ),
+            const SizedBox(height: 8),
+             Wrap(
+              spacing: 6,
+              children: tags.map((tag) => Chip(
+                label: Text(tag, style: const TextStyle(fontSize: 12)),
+                onDeleted: _isEditing ? () {
+                  setState(() {
+                    (_workCategories[index]['tags'] as List).remove(tag);
+                  });
+                } : null,
+              )).toList(),
+            ),
+            if (_isEditing && tags.length < 3)
+              TextField(
+                controller: tagController,
+                maxLength: 20,
+                decoration: InputDecoration(
+                  labelText: 'Add a skill tag (e.g., "Non-veg expert")',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () {
+                      if (tagController.text.isNotEmpty) {
+                        setState(() {
+                          (_workCategories[index]['tags'] as List).add(tagController.text);
+                          tagController.clear();
+                        });
+                      }
+                    },
+                  )
+                ),
+              )
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-// ============================================================================
-// SECTION: Worker Screens
-// ============================================================================
-
-// FILE: lib/screens/worker/worker_dashboard.dart
 class WorkerDashboard extends StatefulWidget {
   final String workerId;
   const WorkerDashboard({Key? key, required this.workerId}) : super(key: key);
@@ -674,23 +1160,28 @@ class WorkerDashboard extends StatefulWidget {
 
 class _WorkerDashboardState extends State<WorkerDashboard> {
   int _selectedIndex = 0;
+  late final List<Widget> _screens;
+
+  @override
+  void initState() {
+    super.initState();
+    _screens = [
+      WorkerJobsScreen(workerId: widget.workerId),
+      WorkerCalendarScreen(workerId: widget.workerId),
+      ProfileScreen(userId: widget.workerId, isWorker: true),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> screens = [
-      WorkerJobsScreen(workerId: widget.workerId),
-      WorkerCalendarScreen(workerId: widget.workerId),
-      WorkerProfileScreen(workerId: widget.workerId),
-    ];
-
     return Scaffold(
-      body: screens[_selectedIndex],
+      body: _screens[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.work_history), label: 'Jobs'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: 'Calendar'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_month), label: 'Schedule'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_pin_circle), label: 'Profile'),
         ],
         onTap: (index) => setState(() => _selectedIndex = index),
       ),
@@ -698,43 +1189,127 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
   }
 }
 
-// FILE: lib/screens/worker/worker_jobs_screen.dart
-class WorkerJobsScreen extends StatelessWidget {
+class WorkerJobsScreen extends StatefulWidget {
   final String workerId;
   const WorkerJobsScreen({Key? key, required this.workerId}) : super(key: key);
 
   @override
+  State<WorkerJobsScreen> createState() => _WorkerJobsScreenState();
+}
+
+class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Job Requests')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where('workerId', isEqualTo: workerId)
-            .where('status', isEqualTo: 'Scheduled')
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('No pending job requests.'));
-          }
-          return ListView.builder(
-            itemCount: snapshot.data!.docs.length,
-            itemBuilder: (context, idx) {
-              final booking = snapshot.data!.docs[idx];
-              final data = booking.data() as Map<String, dynamic>;
-              return JobRequestCard(bookingData: data, bookingId: booking.id, workerId: workerId);
-            },
-          );
-        },
+      appBar: AppBar(
+        title: const Text('My Jobs'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'NEW REQUESTS'),
+            Tab(text: 'UPCOMING'),
+          ],
+        ),
       ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildNewRequestsList(),
+          _buildAcceptedJobsList(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewRequestsList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('workerId', isEqualTo: widget.workerId)
+          .where('status', isEqualTo: 'Scheduled')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('No new job requests.'));
+        }
+
+        List<DocumentSnapshot> docs = snapshot.data!.docs;
+        docs.sort((a, b) {
+          Map<String, dynamic> dataA = a.data() as Map<String, dynamic>;
+          Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
+          Timestamp timeA = dataA['createdAt'];
+          Timestamp timeB = dataB['createdAt'];
+          return timeB.compareTo(timeA); 
+        });
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: docs.length,
+          itemBuilder: (context, idx) {
+            final booking = docs[idx];
+            final data = booking.data() as Map<String, dynamic>;
+            return JobRequestCard(bookingData: data, bookingId: booking.id, workerId: widget.workerId);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAcceptedJobsList() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('workerId', isEqualTo: widget.workerId)
+          .where('status', isEqualTo: 'Accepted')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return const Center(child: Text('You have no upcoming jobs.'));
+        }
+
+        List<DocumentSnapshot> docs = snapshot.data!.docs;
+        docs.sort((a, b) {
+          Map<String, dynamic> dataA = a.data() as Map<String, dynamic>;
+          Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
+          Timestamp timeA = dataA['bookingDate'];
+          Timestamp timeB = dataB['bookingDate'];
+          return timeA.compareTo(timeB); 
+        });
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8),
+          itemCount: docs.length,
+          itemBuilder: (context, idx) {
+            final booking = docs[idx];
+            final data = booking.data() as Map<String, dynamic>;
+            return BookingTile(bookingData: data);
+          },
+        );
+      },
     );
   }
 }
 
-// FILE: lib/screens/worker/worker_calendar_screen.dart
 class WorkerCalendarScreen extends StatefulWidget {
   final String workerId;
   const WorkerCalendarScreen({Key? key, required this.workerId}) : super(key: key);
@@ -779,17 +1354,22 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
 
                 if (selectedDayBookings.isEmpty) {
                   return Center(
-                    child: Text('No jobs on ${DateFormat('MMM dd').format(_selectedDate)}'),
+                    child: Text('No jobs scheduled for ${DateFormat('MMM dd').format(_selectedDate)}'),
                   );
                 }
                 return ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   itemCount: selectedDayBookings.length,
                   itemBuilder: (context, idx) {
                     final data = selectedDayBookings[idx].data() as Map<String, dynamic>;
-                    return ListTile(
-                      title: Text('${data['fromTime']} • ${data['timeSlot']} hours'),
-                      subtitle: Text('Status: ${data['status']}'),
-                      trailing: Text('₹${(data['wage'] ?? 0).toInt()}'),
+                    final bookingDate = (data['bookingDate'] as Timestamp).toDate();
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: ListTile(
+                        title: Text('Job at ${DateFormat.jm().format(bookingDate)} for ${data['timeSlot']} hours'),
+                        subtitle: Text('Status: ${data['status']}'),
+                        trailing: Text('₹${(data['wage'] ?? 0).toInt()}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),),
+                      ),
                     );
                   },
                 );
@@ -802,167 +1382,6 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
   }
 }
 
-// FILE: lib/screens/worker/worker_profile_screen.dart
-class WorkerProfileScreen extends StatefulWidget {
-  final String workerId;
-  const WorkerProfileScreen({Key? key, required this.workerId}) : super(key: key);
-
-  @override
-  State<WorkerProfileScreen> createState() => _WorkerProfileScreenState();
-}
-
-class _WorkerProfileScreenState extends State<WorkerProfileScreen> {
-  final _hourlyRateController = TextEditingController();
-  bool _isEditing = false;
-
-  @override
-  void dispose() {
-    _hourlyRateController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _updateRate() async {
-    final newRate = int.tryParse(_hourlyRateController.text) ?? 0;
-    await FirebaseFirestore.instance
-        .collection('workers')
-        .doc(widget.workerId)
-        .update({'perHourCharge': newRate});
-    setState(() => _isEditing = false);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rate updated successfully!')));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Worker Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const AuthScreen()),
-                (route) => false,
-              );
-            },
-          ),
-        ],
-      ),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('workers').doc(widget.workerId).snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Profile not found.'));
-          }
-          final data = snapshot.data!.data() as Map<String, dynamic>;
-          if (!_isEditing) {
-            _hourlyRateController.text = (data['perHourCharge'] ?? 0).toString();
-          }
-          final availability = data['availability'] == 'Y';
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 32,
-                              backgroundColor: Colors.blue[100],
-                              child: Text((data['name'] ?? 'W')[0].toUpperCase(), style: const TextStyle(fontSize: 24, color: Colors.white)),
-                            ),
-                            const SizedBox(width: 16),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(data['name'] ?? 'N/A', style: Theme.of(context).textTheme.titleLarge),
-                                const SizedBox(height: 4),
-                                Text(data['phone'] ?? 'N/A', style: Theme.of(context).textTheme.bodyMedium),
-                              ],
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            Chip(
-                              avatar: const Icon(Icons.star, color: Colors.amber, size: 18),
-                              label: Text('${data['avgRating'] ?? 0.0} Rating'),
-                            ),
-                            Chip(
-                              avatar: CircleAvatar(radius: 5, backgroundColor: availability ? Colors.green : Colors.grey),
-                              label: Text(availability ? 'Available' : 'Busy'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: _isEditing
-                      ? Column(
-                          children: [
-                            TextField(
-                              controller: _hourlyRateController,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(labelText: 'Hourly Rate (₹)', border: OutlineInputBorder()),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                TextButton(onPressed: () => setState(() => _isEditing = false), child: const Text('Cancel')),
-                                ElevatedButton(onPressed: _updateRate, child: const Text('Save')),
-                              ],
-                            ),
-                          ],
-                        )
-                      : ListTile(
-                          leading: const Icon(Icons.price_change_outlined),
-                          title: const Text('Hourly Rate'),
-                          trailing: Text('₹${data['perHourCharge'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                          onTap: () => setState(() => _isEditing = true),
-                        ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.work_history_outlined),
-                    title: const Text('Completed Jobs'),
-                    trailing: Text('${data['completedBookings'] ?? 0}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// SECTION: Reusable Widgets
-// ============================================================================
-
-// FILE: lib/widgets/worker_card.dart
 class WorkerCard extends StatelessWidget {
   final Map<String, dynamic> worker;
   final String workerId;
@@ -975,9 +1394,12 @@ class WorkerCard extends StatelessWidget {
     final rating = (worker['avgRating'] ?? 0.0).toDouble();
     final hourlyRate = (worker['perHourCharge'] ?? 0).toInt();
     final name = worker['name'] ?? 'N/A';
+    final categories = worker['workCategories'] as List? ?? [];
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
@@ -987,7 +1409,7 @@ class WorkerCard extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 24,
-                  backgroundColor: Colors.blue[100],
+                  backgroundColor: Colors.indigo[100],
                   child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'W', style: const TextStyle(color: Colors.white, fontSize: 20)),
                 ),
                 const SizedBox(width: 12),
@@ -1000,42 +1422,39 @@ class WorkerCard extends StatelessWidget {
                         children: [
                           const Icon(Icons.star, size: 16, color: Colors.amber),
                           const SizedBox(width: 4),
-                          Text('$rating (${worker['completedBookings'] ?? 0} jobs)'),
+                          Text('${rating.toStringAsFixed(1)} (${worker['completedBookings'] ?? 0} jobs)'),
                         ],
                       ),
                     ],
                   ),
                 ),
-                if (worker['availability'] == 'Y')
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.green[100], borderRadius: BorderRadius.circular(4)),
-                    child: const Text('Available', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                  ),
+                Text('₹$hourlyRate/hr', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               ],
             ),
-            const SizedBox(height: 12),
-            if (worker['works'] != null && (worker['works'] as List).isNotEmpty)
+            if (categories.isNotEmpty) const Divider(height: 24),
+            if (categories.isNotEmpty)
               Wrap(
                 spacing: 6, runSpacing: 6,
-                children: (worker['works'] as List).take(3).map((w) => Chip(label: Text(w['workType'] ?? 'Skill'))).toList(),
+                children: (categories).take(3).map((c) => Chip(label: Text(c['mainCategory'] ?? 'Skill'), padding: EdgeInsets.zero,)).toList(),
               ),
             const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('₹$hourlyRate/hour', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => BookingScreen(userId: userId, workerId: workerId, workerName: name),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => BookingCreationScreen(
+                        userId: userId, 
+                        workerId: workerId, 
+                        workerName: name,
+                        workerPhone: worker['phone'] ?? '',
                       ),
-                    );
-                  },
-                  child: const Text('Book Now'),
-                ),
-              ],
+                    ),
+                  );
+                },
+                child: const Text('Book Now'),
+              ),
             ),
           ],
         ),
@@ -1044,18 +1463,20 @@ class WorkerCard extends StatelessWidget {
   }
 }
 
-// FILE: lib/widgets/booking_tile.dart
 class BookingTile extends StatelessWidget {
   final Map<String, dynamic> bookingData;
-  final String bookingId;
 
-  const BookingTile({Key? key, required this.bookingData, required this.bookingId}) : super(key: key);
+  const BookingTile({Key? key, required this.bookingData}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final date = (bookingData['bookingDate'] as Timestamp).toDate();
     final status = bookingData['status'] ?? 'Unknown';
     final wage = (bookingData['wage'] ?? 0).toInt();
+    final workerName = bookingData['workerInfo']?['name'] ?? 'Worker';
+    final userName = bookingData['userInfo']?['name'] ?? 'User';
+    final currentUserIsWorker = FirebaseAuth.instance.currentUser!.uid == bookingData['workerId'];
+
     Color statusColor;
 
     switch (status) {
@@ -1066,7 +1487,9 @@ class BookingTile extends StatelessWidget {
     }
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      elevation: 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -1086,15 +1509,17 @@ class BookingTile extends StatelessWidget {
                 ),
               ],
             ),
+             const SizedBox(height: 8),
+            Text(currentUserIsWorker ? 'Client: $userName' : 'Worker: $workerName'),
             const Divider(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${bookingData['fromTime']} • ${bookingData['timeSlot']} hours',
+                  '${DateFormat.jm().format(date)} • ${bookingData['timeSlot']} hours',
                   style: TextStyle(fontSize: 14, color: Colors.grey[700]),
                 ),
-                Text('₹$wage', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                Text('₹$wage', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.indigo)),
               ],
             ),
           ],
@@ -1104,7 +1529,6 @@ class BookingTile extends StatelessWidget {
   }
 }
 
-// FILE: lib/widgets/job_request_card.dart
 class JobRequestCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
   final String bookingId;
@@ -1122,15 +1546,33 @@ class _JobRequestCardState extends State<JobRequestCard> {
   Future<void> _updateJobStatus(String status) async {
     setState(() => _isLoading = true);
     try {
-      await FirebaseFirestore.instance.collection('bookings').doc(widget.bookingId).update({'status': status});
+      final batch = FirebaseFirestore.instance.batch();
+
+      final bookingRef = FirebaseFirestore.instance.collection('bookings').doc(widget.bookingId);
+      batch.update(bookingRef, {
+        'status': status,
+        'remarks': FieldValue.arrayUnion([
+          { 'log': 'Worker $status the job.', 'timestamp': Timestamp.now() }
+        ])
+      });
+
+      final workerRef = FirebaseFirestore.instance.collection('workers').doc(widget.workerId);
       if (status == 'Accepted') {
-        await FirebaseFirestore.instance.collection('workers').doc(widget.workerId).update({'availability': 'N'});
+        batch.update(workerRef, {'availability': 'N'});
+      } else if (status == 'Rejected') {
+
+        batch.update(workerRef, {'availability': 'Y'});
       }
+
+      await batch.commit();
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Job has been $status.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Job has been $status.'), backgroundColor: status == 'Accepted' ? Colors.green : Colors.orange,));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent,));
+    } finally {
+
     }
   }
 
@@ -1138,18 +1580,23 @@ class _JobRequestCardState extends State<JobRequestCard> {
   Widget build(BuildContext context) {
     final date = (widget.bookingData['bookingDate'] as Timestamp).toDate();
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
+    final userName = widget.bookingData['userInfo']?['name'] ?? 'A user';
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Text('New request from $userName', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
             Text(DateFormat('MMMM dd, yyyy').format(date), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             Text(
-              '${widget.bookingData['fromTime']} • ${widget.bookingData['timeSlot']} hours',
+              'Time: ${DateFormat.jm().format(date)} • Duration: ${widget.bookingData['timeSlot']} hours',
               style: TextStyle(fontSize: 14, color: Colors.grey[700]),
             ),
             const Divider(height: 24),
@@ -1162,7 +1609,10 @@ class _JobRequestCardState extends State<JobRequestCard> {
             ),
             const SizedBox(height: 16),
             if (_isLoading)
-              const Center(child: CircularProgressIndicator())
+              const Center(child: Padding(
+                padding: EdgeInsets.all(8.0),
+                child: CircularProgressIndicator(),
+              ))
             else
               Row(
                 children: [

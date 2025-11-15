@@ -1,12 +1,13 @@
+// lib/features/auth/auth_screen.dart
 import 'dart:convert';
-import 'dart:async'; // Import for TimeoutException
-import 'dart:io'; // Import for SocketException
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart'; // Required for temp app initialization
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-
 
 const String API_BASE_URL = "https://hawk4aynahtirk.pythonanywhere.com"; 
 const String API_SECRET = "HiFhGDorJRULc1Z"; 
@@ -27,14 +28,14 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLocationLoading = false; 
   String? _pincodeError; 
   
-  // 🔴 NEW: Variable to store the Handshake ID
+  // Variable to store the Handshake ID
   String? _serverCorrelationId;
 
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
   final _pinController = TextEditingController();
-  final _otpController = TextEditingController(); // For OTP Dialog
+  final _otpController = TextEditingController();
 
   List<String> _localities = [];
   String? _selectedLocality;
@@ -63,7 +64,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  // ... [Your existing _detectLocationAndFetchPincode function] ...
   Future<void> _detectLocationAndFetchPincode() async {
     setState(() { _isLocationLoading = true; _pincodeError = null; });
     try {
@@ -91,7 +91,6 @@ class _AuthScreenState extends State<AuthScreen> {
     } finally { if (mounted) setState(() => _isLocationLoading = false); }
   }
 
-  // ... [Your existing _fetchLocalities function] ...
   Future<void> _fetchLocalities(String pincode) async {
     setState(() { _localities = []; _selectedLocality = null; _pincodeError = null; });
     try {
@@ -112,28 +111,23 @@ class _AuthScreenState extends State<AuthScreen> {
 
 
   // -----------------------------------------------------------
-  // 🔴🔴🔴 AUTH LOGIC (Updated for Handshake) 🔴🔴🔴
+  // AUTH LOGIC
   // -----------------------------------------------------------
 
-  /// Main handler for the submit button
   Future<void> _submitAuthForm() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_isLoginMode) {
-      // Login flow is unchanged
       await _login();
     } else {
-      // --- SIGN UP FLOW ---
       if (_pincodeError != null) return; 
       if (_localities.isEmpty) { setState(() => _pincodeError = 'Enter a valid pincode first'); return; }
       if (_selectedLocality == null) { _showError('Please select a locality.'); return; }
 
-      // 1. We start by requesting an OTP. We do NOT create the user yet.
       await _requestOtpForNewUser();
     }
   }
 
-  /// STEP 1: Call server to request an OTP.
   Future<void> _requestOtpForNewUser() async {
     setState(() => _isLoading = true);
     final phone = _phoneController.text.trim();
@@ -149,10 +143,7 @@ class _AuthScreenState extends State<AuthScreen> {
       final body = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // 🔴 UPDATED: Store the Correlation ID from server
         _serverCorrelationId = body['correlation_id'];
-        
-        // 2. Success! Show the OTP dialog.
         debugPrint("/generate-otp successful. CID: $_serverCorrelationId");
         if (mounted) _showOtpDialog(phone);
       } else {
@@ -162,13 +153,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
     } catch (e) {
       _showError("Error: $e");
-      debugPrint("Error in _requestOtpForNewUser: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// STEP 2: Show dialog to enter OTP
   void _showOtpDialog(String phone) {
     _otpController.clear();
     showDialog(
@@ -199,8 +188,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
           ElevatedButton(
             onPressed: () {
-              // 3. User clicked "Verify".
-              Navigator.pop(ctx); // Close dialog
+              Navigator.pop(ctx); 
               _verifyOtpAndCreateAccount(phone, _otpController.text.trim());
             }, 
             child: const Text("Verify & Sign Up")
@@ -210,7 +198,6 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  /// STEP 3: Verify OTP, and IF successful, create the account.
   Future<void> _verifyOtpAndCreateAccount(String phone, String code) async {
     if (code.length != 6) {
       _showError("OTP must be 6 digits");
@@ -220,58 +207,60 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 🔴 UPDATED: Call server to check the OTP + Correlation ID
       debugPrint("Calling /verify-otp-log...");
       final response = await http.post(
-        Uri.parse('$API_BASE_URL/verify-otp-log'), // Use the logging endpoint
+        Uri.parse('$API_BASE_URL/verify-otp-log'),
         headers: { "Content-Type": "application/json", "x-secret-key": API_SECRET },
         body: jsonEncode({
             "phone": phone, 
             "code": code,
-            "correlation_id": _serverCorrelationId // Send the handshake key
+            "correlation_id": _serverCorrelationId 
         }), 
       ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
 
       if (response.statusCode == 200 && body['valid'] == true) {
-        // 5. SUCCESS! Server verified and logged it.
-        // NOW we create the user locally using your ORIGINAL logic.
         debugPrint("OTP verified. Creating Firebase user...");
         await _finalSignUp();
-        _showSuccess("Phone Verified! Account Created.");
       } else {
         throw Exception(body['error'] ?? 'Invalid OTP');
       }
 
     } catch (e) {
       _showError("$e");
-      debugPrint("Error in _verifyOtpAndCreateAccount: $e");
-    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// STEP 4: This is the actual account creation, only called after OTP is valid.
-  /// ⚠️ THIS IS YOUR ORIGINAL LOGIC (UNTOUCHED)
+  /// ✅ UPDATED: Creates account WITHOUT auto-login
+  /// Redirects user to Login Screen after success.
   Future<void> _finalSignUp() async {
     final phone = _phoneController.text.trim();
     final email = '$phone@kaaryaconnect.app';
     final password = _passwordController.text.trim();
     
+    FirebaseApp? tempApp;
+
     try {
-      // 1. Create Firebase Auth user
-      UserCredential userCredential = await FirebaseAuth.instance
+      // 1. Initialize a secondary Firebase App to create user without signing in the main app
+      tempApp = await Firebase.initializeApp(
+        name: 'tempAuthApp_${DateTime.now().millisecondsSinceEpoch}',
+        options: Firebase.app().options,
+      );
+
+      // 2. Create User on the secondary app
+      UserCredential userCredential = await FirebaseAuth.instanceFor(app: tempApp)
           .createUserWithEmailAndPassword(email: email, password: password);
       
       final uid = userCredential.user!.uid;
 
-      // 2. Write Firestore doc, setting phone_verified to TRUE
+      // 3. Write Firestore Data (Main instance is fine for writing)
       final userData = {
         'id': uid,
         'name': _nameController.text.trim(),
         'phone': phone,
-        'phone_verified': true, // We set to TRUE
+        'phone_verified': true,
         'pin': _pinController.text.trim(),
         'locality': _selectedLocality ?? '',
         'createdAt': Timestamp.now(),
@@ -281,24 +270,36 @@ class _AuthScreenState extends State<AuthScreen> {
       String collectionPath = _isWorker ? 'workers' : 'users';
       await FirebaseFirestore.instance.collection(collectionPath).doc(uid).set(userData);
 
-      // Success! The AuthWrapper will automatically navigate.
+      // 4. Clean up temp app
+      await tempApp.delete();
+
+      // 5. ✅ SUCCESS: Switch to Login Mode & Show Message
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoginMode = true; // Switch form to login
+          _passwordController.clear(); // Clear password field
+          // Note: We keep the phone number filled so they can easily login
+        });
+        _showSuccess("Account created successfully! Please login to continue.");
+      }
 
     } on FirebaseAuthException catch (e) {
-        // Handle case where user exists (retry login logic if needed)
-        if (e.code == 'email-already-in-use') {
-            // Optional: Attempt silent login if you wish, or just show error
-            _showError("User already exists. Try logging in.");
-        } else {
-            _showError(e.message ?? 'Sign up failed');
-        }
-      debugPrint("Error in _finalSignUp: $e");
+      if (tempApp != null) await tempApp.delete(); // Ensure cleanup
+      
+      if (e.code == 'email-already-in-use') {
+        _showError("User already exists. Please login.");
+      } else {
+        _showError(e.message ?? 'Sign up failed');
+      }
+      if (mounted) setState(() => _isLoading = false);
     } catch (e) {
+      if (tempApp != null) await tempApp.delete(); // Ensure cleanup
       _showError("Error: $e");
-      debugPrint("Error in _finalSignUp: $e");
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Standard Login Function (Unchanged)
   Future<void> _login() async {
     setState(() => _isLoading = true);
     try {
@@ -307,7 +308,7 @@ class _AuthScreenState extends State<AuthScreen> {
         email: email,
         password: _passwordController.text,
       );
-      // The AuthWrapper will handle navigation automatically.
+      // AuthWrapper will handle navigation
     } on FirebaseAuthException catch (e) {
       _showError(e.message ?? 'Login failed');
     } catch (e) {
@@ -317,10 +318,8 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    // ... [Your existing, unchanged build() method] ...
     return Scaffold(
       appBar: AppBar(title: const Text('Kaarya Connect')),
       body: Center(
@@ -386,8 +385,11 @@ class _AuthScreenState extends State<AuthScreen> {
                             validator: (v) => (v == null || v.length != 6) ? 'Must be 6 digits' : null,
                             onChanged: (val) {
                               if (_pincodeError != null) setState(() => _pincodeError = null);
-                              if (val.length == 6) _fetchLocalities(val);
-                              else setState(() { _localities = []; _selectedLocality = null; });
+                              if (val.length == 6) {
+                                _fetchLocalities(val);
+                              } else {
+                                setState(() { _localities = []; _selectedLocality = null; });
+                              }
                             },
                           ),
                         ),

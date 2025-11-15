@@ -18,7 +18,7 @@ class BookingTile extends StatefulWidget {
 
 class _BookingTileState extends State<BookingTile> {
   bool _isCancelling = false;
-  bool _isCompleting = false;
+  // --- REMOVED: _isCompleting ---
 
   String? get _currentBookingId => widget.bookingId ?? widget.bookingData['id'];
 
@@ -51,34 +51,40 @@ class _BookingTileState extends State<BookingTile> {
     try {
       final batch = FirebaseFirestore.instance.batch();
       final bookingRef = FirebaseFirestore.instance.collection('bookings').doc(_currentBookingId);
-      final isAccepted = widget.bookingData['status'] == 'Accepted';
+      
+      // --- MODIFIED: Use new status code ---
+      final isAccepted = widget.bookingData['status'] == 'a1';
 
       // 1. Update booking status
       batch.update(bookingRef, {
         'status': 'Cancelled',
-        'remarks': FieldValue.arrayUnion([
+        'log.actions': FieldValue.arrayUnion([ // --- MODIFIED: Log to new structure ---
           {
             'log': 'Client cancelled the booking.',
             'timestamp': Timestamp.now(),
-            'type': 'cancellation'
+            'actor': widget.bookingData['userId'],
+            'action': 'cancelled'
           }
         ])
       });
 
-      // 2. Update worker availability only if it was an accepted job
-      if (isAccepted) {
-        final workerRef = FirebaseFirestore.instance.collection('workers').doc(widget.bookingData['workerId']);
-        batch.update(workerRef, {'availability': 'Y'});
-      }
+      // --- REMOVED: Worker availability update ---
+      // This logic is now handled by the server's bitmask and is too
+      // complex to replicate in the app during a cancellation.
+      // A server-side "cancel" endpoint would be required to do this safely.
 
       // 3. Send notification to worker
       final notificationRef = FirebaseFirestore.instance.collection('notifications').doc();
+      // --- MODIFIED: Get user name from booking data if available ---
+      final userName = widget.bookingData['userInfo']?['name'] ?? widget.bookingData['userName'] ?? 'A client';
+      final bookingDate = (widget.bookingData['bookingDate'] as Timestamp).toDate();
+
       batch.set(notificationRef, {
         'recipientId': widget.bookingData['workerId'],
         'senderId': widget.bookingData['userId'],
         'type': 'booking_cancelled',
         'title': 'Booking Cancelled',
-        'message': '${widget.bookingData['userInfo']?['name'] ?? 'A client'} has cancelled their booking scheduled for ${DateFormat('MMM d, yyyy \'at\' h:mm a').format((widget.bookingData['bookingDate'] as Timestamp).toDate())}.',
+        'message': '$userName has cancelled their booking scheduled for ${DateFormat('MMM d, yyyy \'at\' h:mm a').format(bookingDate)}.',
         'bookingId': _currentBookingId,
         'isRead': false,
         'createdAt': Timestamp.now(),
@@ -106,90 +112,7 @@ class _BookingTileState extends State<BookingTile> {
     }
   }
 
-  Future<void> _completeJob() async {
-    if (_currentBookingId == null) return;
-    
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Mark Job as Complete'),
-        content: const Text('Are you sure you want to mark this job as completed? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('No'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.green),
-            child: const Text('Yes, Complete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-
-    setState(() => _isCompleting = true);
-
-    try {
-      final batch = FirebaseFirestore.instance.batch();
-      final bookingRef = FirebaseFirestore.instance.collection('bookings').doc(_currentBookingId);
-      final workerRef = FirebaseFirestore.instance.collection('workers').doc(widget.bookingData['workerId']);
-
-      // 1. Update booking status
-      batch.update(bookingRef, {
-        'status': 'Completed',
-        'completedAt': Timestamp.now(),
-        'remarks': FieldValue.arrayUnion([
-          {
-            'log': 'Worker marked the job as completed.',
-            'timestamp': Timestamp.now(),
-            'type': 'completion'
-          }
-        ])
-      });
-
-      // 2. Update worker's stats and availability
-      batch.update(workerRef, {
-        'completedBookings': FieldValue.increment(1),
-        'availability': 'Y' // Make worker available again
-      });
-
-      // 3. Send notification to customer (to prompt rating/confirmation)
-      final notificationRef = FirebaseFirestore.instance.collection('notifications').doc();
-      batch.set(notificationRef, {
-        'recipientId': widget.bookingData['userId'],
-        'senderId': widget.bookingData['workerId'],
-        'type': 'job_completed',
-        'title': 'Job Completed',
-        'message': '${widget.bookingData['workerInfo']?['name'] ?? 'Your worker'} has completed the job scheduled for ${DateFormat('MMM d, yyyy \'at\' h:mm a').format((widget.bookingData['bookingDate'] as Timestamp).toDate())}. Please rate the service if you haven\'t already.',
-        'bookingId': _currentBookingId,
-        'isRead': false,
-        'createdAt': Timestamp.now(),
-      });
-
-      await batch.commit();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Job marked as completed successfully. The customer has been notified.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to complete job: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isCompleting = false);
-    }
-  }
+  // --- REMOVED: _completeJob function ---
 
   Future<void> _reportIssue(String reportType) async {
     final reportReason = await showDialog<String>(
@@ -243,20 +166,45 @@ class _BookingTileState extends State<BookingTile> {
     final date = (widget.bookingData['bookingDate'] as Timestamp).toDate();
     final status = widget.bookingData['status'] ?? 'Unknown';
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
-    final workerName = widget.bookingData['workerInfo']?['name'] ?? 'Worker';
-    final userName = widget.bookingData['userInfo']?['name'] ?? 'User';
+    final workerName = widget.bookingData['workerInfo']?['name'] ?? widget.bookingData['workerName'] ?? 'Worker';
+    final userName = widget.bookingData['userInfo']?['name'] ?? widget.bookingData['userName'] ?? 'User';
     final currentUserIsWorker = FirebaseAuth.instance.currentUser!.uid == widget.bookingData['workerId'];
     
     // Status visualization
+    // --- MODIFIED: Updated status codes ---
     Color statusColor;
     IconData statusIcon;
     switch (status) {
-      case 'Completed': statusColor = Colors.green; statusIcon = Icons.check_circle; break;
+      case 'e3': // Completed
+        statusColor = Colors.green; 
+        statusIcon = Icons.check_circle; 
+        break;
       case 'Cancelled':
-      case 'Rejected': statusColor = Colors.red; statusIcon = Icons.cancel; break;
-      case 'Accepted': statusColor = Colors.blue; statusIcon = Icons.thumb_up; break;
-      default: statusColor = Colors.orange; statusIcon = Icons.pending;
+      case 'Rejected': 
+        statusColor = Colors.red; 
+        statusIcon = Icons.cancel; 
+        break;
+      case 'a1': // Accepted
+        statusColor = Colors.blue; 
+        statusIcon = Icons.thumb_up; 
+        break;
+      case 'w2': // In Progress
+        statusColor = Colors.cyan; 
+        statusIcon = Icons.construction; 
+        break;
+      case 'w1': // Start OTP Sent
+      case 'e1': // End OTP Sent
+      case 'e2': // End OTP Sent
+        statusColor = Colors.deepPurple; 
+        statusIcon = Icons.password; 
+        break;
+      case 'b1': // Created
+      case 'b2': // Dispatched
+      default: 
+        statusColor = Colors.orange; 
+        statusIcon = Icons.pending;
     }
+    // --- END MODIFICATION ---
 
     return InkWell(
       onTap: () {
@@ -265,7 +213,8 @@ class _BookingTileState extends State<BookingTile> {
                 MaterialPageRoute(
                     builder: (_) => BookingDetailsScreen(
                         bookingId: _currentBookingId!,
-                        userId: currentUserIsWorker ? widget.bookingData['workerId'] : widget.bookingData['userId'],
+                        // --- MODIFICATION: Pass correct user ID ---
+                        userId: FirebaseAuth.instance.currentUser!.uid,
                         isWorker: currentUserIsWorker,
                     ),
                 ),
@@ -376,10 +325,12 @@ class _BookingTileState extends State<BookingTile> {
                             children: [
                               Icon(Icons.timer, size: 16, color: Colors.grey[600]),
                               const SizedBox(width: 4),
+                              // --- MODIFICATION: Use new hour fields ---
                               Text(
-                                '${widget.bookingData['timeSlot']} hours',
+                                '${(widget.bookingData['endHour'] ?? 0) - (widget.bookingData['startHour'] ?? 0)} hours',
                                 style: TextStyle(color: Colors.grey[600]),
                               ),
+                              // --- END MODIFICATION ---
                             ],
                           ),
                         ],
@@ -406,8 +357,8 @@ class _BookingTileState extends State<BookingTile> {
                   ),
                   
                   // Conditional Buttons (Actions)
-                  // Cancel & Report (Client/User View for Scheduled/Accepted)
-                  if (!currentUserIsWorker && (status == 'Scheduled' || status == 'Accepted') && !_isCancelling)
+                  // --- MODIFIED: Updated status codes ---
+                  if (!currentUserIsWorker && (status == 'b2' || status == 'a1') && !_isCancelling)
                     Padding(
                       padding: const EdgeInsets.only(top: 16),
                       child: Row(
@@ -439,41 +390,10 @@ class _BookingTileState extends State<BookingTile> {
                       ),
                     ),
                     
-                  // Complete & Report (Worker View for Accepted)
-                  if (currentUserIsWorker && status == 'Accepted' && !_isCompleting)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: _completeJob,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.green,
-                                foregroundColor: Colors.white,
-                              ),
-                              icon: const Icon(Icons.check_circle),
-                              label: const Text('Complete'),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () => _reportIssue('Worker reporting issue with client'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.orange,
-                                side: const BorderSide(color: Colors.orange),
-                              ),
-                              icon: const Icon(Icons.report),
-                              label: const Text('Report'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // --- REMOVED: Worker "Complete" button ---
                     
                   // Loading Indicator
-                  if (_isCancelling || _isCompleting)
+                  if (_isCancelling) // --- MODIFIED: Removed _isCompleting ---
                     const Padding(
                       padding: EdgeInsets.only(top: 16),
                       child: Center(

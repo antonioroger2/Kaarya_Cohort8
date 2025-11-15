@@ -38,11 +38,13 @@ dependencies:
   firebase_auth: ^4.9.0
   cloud_firestore: ^4.8.4
   intl: ^0.19.0
+  geolocator: ^13.0.1
+  geocoding: ^3.0.0
+  http: ^1.2.0
 
 dependency_overrides:
   firebase_auth_web: 5.8.0
   firebase_core_web: 2.8.0
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

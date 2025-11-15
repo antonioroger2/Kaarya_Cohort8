@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../features/worker/user_details_screen.dart';
+import '../../core/api_client.dart'; // Import the ApiClient
 
 class JobRequestCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
@@ -23,63 +24,31 @@ class JobRequestCard extends StatefulWidget {
 class _JobRequestCardState extends State<JobRequestCard> {
   bool _isLoading = false;
 
-  Future<void> _updateJobStatus(String status) async {
+  // --- MODIFIED: Use ApiClient for accept/reject ---
+  Future<void> _handleJobAction(String action) async {
     setState(() => _isLoading = true);
     
-    final batch = FirebaseFirestore.instance.batch();
-    final bookingRef = FirebaseFirestore.instance.collection('bookings').doc(widget.bookingId);
-    final workerRef = FirebaseFirestore.instance.collection('workers').doc(widget.workerId);
+    final endpoint = action == 'Accepted' ? '/worker-accept' : '/worker-reject';
+    final payload = {
+      'workerId': widget.workerId,
+      'bookingId': widget.bookingId,
+    };
 
     try {
-      batch.update(bookingRef, {
-        'status': status,
-        'remarks': FieldValue.arrayUnion([
-          { 'log': 'Worker $status the job.', 'timestamp': Timestamp.now() }
-        ])
-      });
-
-      // Update worker availability based on status
-      if (status == 'Accepted') {
-        // Worker is now busy
-        batch.update(workerRef, {'availability': 'N'});
-        
-        // Send acceptance notification to user
-        await FirebaseFirestore.instance.collection('notifications').add({
-            'recipientId': widget.bookingData['userId'],
-            'senderId': widget.workerId,
-            'type': 'booking_accepted',
-            'title': 'Booking Accepted!',
-            'message': '${widget.bookingData['workerInfo']?['name']} has accepted your booking for ${DateFormat('MMM d, h:mm a').format((widget.bookingData['bookingDate'] as Timestamp).toDate())}.',
-            'bookingId': widget.bookingId,
-            'isRead': false,
-            'createdAt': Timestamp.now(),
-        });
-      } else if (status == 'Rejected') {
-        // Worker remains available
-        batch.update(workerRef, {'availability': 'Y'});
-        
-        // Send rejection notification to user
-        await FirebaseFirestore.instance.collection('notifications').add({
-            'recipientId': widget.bookingData['userId'],
-            'senderId': widget.workerId,
-            'type': 'booking_rejected',
-            'title': 'Booking Rejected',
-            'message': '${widget.bookingData['workerInfo']?['name']} has rejected your booking request for ${DateFormat('MMM d, h:mm a').format((widget.bookingData['bookingDate'] as Timestamp).toDate())}.',
-            'bookingId': widget.bookingId,
-            'isRead': false,
-            'createdAt': Timestamp.now(),
-        });
-      }
-
-      await batch.commit();
+      final response = await ApiClient.post(endpoint, payload);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Job has been $status.'),
-          backgroundColor: status == 'Accepted' ? Colors.green : Colors.orange,
-        ),
-      );
+
+      if (response['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Job has been $action.'),
+            backgroundColor: action == 'Accepted' ? Colors.green : Colors.orange,
+          ),
+        );
+      } else {
+        throw Exception(response['error'] ?? 'Failed to $action job');
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -92,15 +61,24 @@ class _JobRequestCardState extends State<JobRequestCard> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+  
+  // OLD _updateJobStatus function is REMOVED
 
   @override
   Widget build(BuildContext context) {
-    final date = (widget.bookingData['bookingDate'] as Timestamp).toDate();
+    // --- MODIFICATION: Use new server fields ---
+    final date = (widget.bookingData['bookingDate'] as Timestamp? ?? widget.bookingData['createdAt'] as Timestamp).toDate();
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
     final userId = widget.bookingData['userId'] ?? '';
-    final userName = widget.bookingData['userInfo']?['name'] ?? 'A user';
-    final userPhone = widget.bookingData['userInfo']?['phone'] ?? '';
-    final timeSlot = widget.bookingData['timeSlot'] ?? 1;
+    // Use location.locality or notes for display
+    final location = widget.bookingData['location'] ?? {};
+    final locality = location['locality'] ?? 'Unknown';
+    
+    // Fetch user info from the booking root, not a sub-object
+    final userName = widget.bookingData['userName'] ?? 'A user'; // Assuming you might add this
+    final userPhone = widget.bookingData['userPhone'] ?? '';
+    final timeSlot = (widget.bookingData['endHour'] ?? 0) - (widget.bookingData['startHour'] ?? 0);
+    // --- END MODIFICATION ---
 
     return InkWell(
       onTap: () {
@@ -124,7 +102,7 @@ class _JobRequestCardState extends State<JobRequestCard> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [Colors.blue.shade100!, Colors.blue.shade50!],
+                  colors: [Colors.blue.shade100, Colors.blue.shade50],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -266,7 +244,8 @@ class _JobRequestCardState extends State<JobRequestCard> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => _updateJobStatus('Rejected'),
+                            // --- MODIFIED ---
+                            onPressed: () => _handleJobAction('Rejected'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
                               padding: const EdgeInsets.symmetric(vertical: 12),
@@ -278,7 +257,8 @@ class _JobRequestCardState extends State<JobRequestCard> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: () => _updateJobStatus('Accepted'),
+                            // --- MODIFIED ---
+                            onPressed: () => _handleJobAction('Accepted'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
                               padding: const EdgeInsets.symmetric(vertical: 12),

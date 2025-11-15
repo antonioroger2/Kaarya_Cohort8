@@ -45,12 +45,16 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
         child: TabBarView(
           controller: _tabController,
           children: [
-            // Accepted bookings are considered upcoming (client side)
-            _buildBookingsList(['Accepted']),
-            // Scheduled (awaiting worker acceptance) are pending
-            _buildBookingsList(['Scheduled']),
-            // Completed, Cancelled, Rejected are history
-            _buildBookingsList(['Completed', 'Cancelled', 'Rejected']),
+            // --- MODIFIED: Use new status codes ---
+            // 'a1' (accepted), 'w1' (start OTP sent), 'w2' (in progress)
+            _buildBookingsList(['a1', 'w1', 'w2']),
+            
+            // 'b1' (created), 'b2' (dispatched)
+            _buildBookingsList(['b1', 'b2']),
+            
+            // 'e3' (completed), 'Cancelled', 'Rejected'
+            _buildBookingsList(['e3', 'Cancelled', 'Rejected']),
+            // --- END MODIFICATION ---
           ],
         ),
       ),
@@ -70,13 +74,15 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           String message;
-          if (statuses.contains('Accepted')) {
+          // --- MODIFICATION: Updated status checks ---
+          if (statuses.contains('a1')) {
             message = "You have no upcoming bookings.";
-          } else if (statuses.contains('Scheduled')) {
+          } else if (statuses.contains('b2')) {
             message = "You have no pending booking requests.";
           } else {
             message = "You have no past bookings.";
           }
+          // --- END MODIFICATION ---
           return Center(child: Text(message));
         }
 
@@ -88,10 +94,12 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
           Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
           Timestamp timeA = dataA['bookingDate'] ?? dataA['createdAt'];
           Timestamp timeB = dataB['bookingDate'] ?? dataB['createdAt'];
-
-          if (statuses.contains('Accepted')) {
+          
+          // --- MODIFICATION: Updated status check ---
+          if (statuses.contains('a1')) {
             return timeA.compareTo(timeB); // Upcoming: ASC
           }
+          // --- END MODIFICATION ---
           return timeB.compareTo(timeA); // History/Pending: DESC
         });
 

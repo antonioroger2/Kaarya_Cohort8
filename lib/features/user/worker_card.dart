@@ -24,6 +24,14 @@ class WorkerCard extends StatelessWidget {
     final experience = worker['experience'] ?? 0;
     final completedJobs = worker['completedBookings'] ?? 0;
 
+    // --- MODIFICATION START ---
+    // This is the fix. We must manually map the List<dynamic> from Firestore
+    // into a List<Map<String, dynamic>>.
+    final List<Map<String, dynamic>> workCategories = categories
+        .map((category) => Map<String, dynamic>.from(category as Map))
+        .toList();
+    // --- MODIFICATION END ---
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -118,7 +126,8 @@ class WorkerCard extends StatelessWidget {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: categories.take(3).map((c) {
+                    // Use the safely-mapped list here
+                    children: workCategories.take(3).map((c) {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
@@ -187,6 +196,8 @@ class WorkerCard extends StatelessWidget {
                             workerId: workerId,
                             workerName: name,
                             workerPhone: phone,
+                            // Pass the safely-mapped list
+                            workCategories: workCategories,
                           ),
                         ),
                       );

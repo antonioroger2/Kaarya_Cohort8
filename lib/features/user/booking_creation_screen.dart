@@ -2,12 +2,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import '../../core/api_client.dart'; // Import the ApiClient
 
 class BookingCreationScreen extends StatefulWidget {
   final String userId;
   final String workerId;
   final String workerName;
   final String workerPhone;
+  // --- MODIFIED: Accept list of categories ---
+  final List<Map<String, dynamic>> workCategories;
 
   const BookingCreationScreen({
     super.key, 
@@ -15,6 +18,7 @@ class BookingCreationScreen extends StatefulWidget {
     required this.workerId, 
     required this.workerName,
     required this.workerPhone,
+    required this.workCategories, // Changed from String serviceType
   });
 
   @override
@@ -26,8 +30,38 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
   int _hours = 2;
   bool _isLoading = false;
+  final _notesController = TextEditingController();
+  
+  // --- NEW: State for service selection ---
+  String? _selectedServiceType;
+  List<String> _availableServices = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Populate the list of available services from the worker's categories
+    _availableServices = widget.workCategories
+        .map((cat) => cat['mainCategory'] as String)
+        .toList();
+    
+    // Default to the first service if available
+    if (_availableServices.isNotEmpty) {
+      _selectedServiceType = _availableServices.first;
+    }
+  }
+  // --- END NEW ---
 
   Future<void> _confirmBooking() async {
+    // --- NEW: Validation for service type ---
+    if (_selectedServiceType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please select a service type'),
+        backgroundColor: Colors.redAccent,
+      ));
+      return;
+    }
+    // --- END NEW ---
+
     setState(() => _isLoading = true);
 
     try {
@@ -52,56 +86,57 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           _selectedTime.minute
       );
       
-      final newBookingRef = FirebaseFirestore.instance.collection('bookings').doc();
+      final startHour = _selectedTime.hour;
+      final endHour = startHour + _hours;
 
-      // Create Booking
-      await newBookingRef.set({
-        'id': newBookingRef.id,
+      final bookingPayload = {
         'userId': widget.userId,
-        'workerId': widget.workerId,
-        'userInfo': {
-          'name': userData['name'],
-          'phone': userData['phone'],
+        'userPhone': userData['phone'] ?? '',
+        'candidateWorkers': [widget.workerId], // Send as a list
+        'date': DateFormat('yyyy-MM-dd').format(_selectedDate), // Server expects "YYYY-MM-DD"
+        'startHour': startHour,
+        'endHour': endHour,
+        'wage': wage.toInt(),
+        'ta': 0, // Travel Allowance, default to 0
+        // --- MODIFIED: Use the selected service type ---
+        'serviceType': _selectedServiceType,
+        'location': {
+          'locality': userData['locality'] ?? '',
+          'pin': userData['pin'] ?? '',
+          'address': userData['locality'] ?? '', // Add more address info if you have it
         },
-        'workerInfo': {
-          'name': workerData['name'],
-          'phone': workerData['phone'],
-        },
-        'bookingDate': Timestamp.fromDate(bookingDateTime),
-        'timeSlot': _hours,
-        'bookingType': 'Hourly',
-        'wage': wage,
-        'status': 'Scheduled', // Initial status: Awaiting worker acceptance
-        'createdAt': Timestamp.now(),
-        'remarks': [
-          { 'log': 'Booking created by user.', 'timestamp': Timestamp.now() }
-        ],
-        'rating': 0,
-        'review': ''
-      });
+        'notes': _notesController.text.trim(),
+      };
 
-      // Send Notification to Worker
-      await FirebaseFirestore.instance.collection('notifications').add({
-          'recipientId': widget.workerId,
-          'senderId': widget.userId,
-          'type': 'new_booking_request',
-          'title': 'New Booking Request!',
-          'message': 'You have a new job request from ${userData['name']} for ${DateFormat('MMM d, h:mm a').format(bookingDateTime)}.',
-          'bookingId': newBookingRef.id,
-          'isRead': false,
-          'createdAt': Timestamp.now(),
-      });
+      final response = await ApiClient.post('/create-booking', bookingPayload);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Booking request sent to worker!'), backgroundColor: Colors.green,));
-      Navigator.of(context).pop();
+
+      if (response['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Booking request sent to worker!'),
+          backgroundColor: Colors.green,
+        ));
+        Navigator.of(context).pop();
+      } else {
+        throw Exception(response['error'] ?? 'Failed to create booking');
+      }
 
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.redAccent,));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Error: $e'),
+        backgroundColor: Colors.redAccent,
+      ));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _notesController.dispose();
+    super.dispose();
   }
 
   @override
@@ -113,6 +148,36 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // --- NEW: Service Selection Dropdown ---
+            const Text('Select Service', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: DropdownButtonFormField<String>(
+                  value: _selectedServiceType,
+                  items: _availableServices.map((String service) {
+                    return DropdownMenuItem<String>(
+                      value: service,
+                      child: Text(service),
+                    );
+                  }).toList(),
+                  onChanged: (newValue) {
+                    setState(() {
+                      _selectedServiceType = newValue;
+                    });
+                  },
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    prefixIcon: Icon(Icons.build),
+                  ),
+                ),
+              ),
+            ),
+            // --- END NEW ---
+
+            const SizedBox(height: 20),
+            
             const Text('Select Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
@@ -178,6 +243,18 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                   ],
                 ),
               ),
+            ),
+
+            const SizedBox(height: 20),
+            const Text('Notes (Optional)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _notesController,
+              decoration: const InputDecoration(
+                hintText: 'e.g. "Main tap is leaking", "Bring ladder"',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
             ),
             
             const SizedBox(height: 40),

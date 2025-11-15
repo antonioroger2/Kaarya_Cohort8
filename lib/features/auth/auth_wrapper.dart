@@ -20,9 +20,10 @@ class AuthWrapper extends StatelessWidget {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        // 2. If NO user, show AuthScreen
+        // 2. Lazy Login: If NO user, show UserDashboard as Guest (empty userId)
+        // The HomeScreen inside will handle the guest logic.
         if (!authSnapshot.hasData) {
-          return const AuthScreen();
+          return const UserDashboard(userId: '');
         }
 
         // 3. User IS logged in. 
@@ -80,8 +81,7 @@ class AuthWrapper extends StatelessWidget {
                 }
                 
                 // Logged in, but doc doesn't exist in 'users' OR 'workers'.
-                // This happens for a brief moment during sign-up.
-                // Show AuthScreen.
+                // This happens for a brief moment during sign-up or error states.
                 return const AuthScreen();
               },
             );

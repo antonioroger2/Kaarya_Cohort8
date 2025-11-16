@@ -15,25 +15,18 @@ class AuthWrapper extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
         
-        // 1. Show loading screen while checking auth
         if (authSnapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
-        // 2. Lazy Login: If NO user, show UserDashboard as Guest (empty userId)
-        // The HomeScreen inside will handle the guest logic.
         if (!authSnapshot.hasData) {
           return const UserDashboard(userId: '');
         }
 
-        // 3. User IS logged in. 
-        // Now, we must find their document and check 'phone_verified'.
-        // We'll check 'workers' first, then 'users'.
         
         final user = authSnapshot.data!;
 
         return StreamBuilder<DocumentSnapshot>(
-          // Listen to the 'workers' collection
           stream: FirebaseFirestore.instance.collection('workers').doc(user.uid).snapshots(),
           builder: (context, workerSnapshot) {
             
@@ -42,21 +35,8 @@ class AuthWrapper extends StatelessWidget {
             }
 
             if (workerSnapshot.hasData && workerSnapshot.data!.exists) {
-              // This is a Worker. NOW check verification.
-              final data = workerSnapshot.data!.data() as Map<String, dynamic>?;
-              final isVerified = data?['phone_verified'] ?? false;
-              
-              if (isVerified) {
-                // Logged in, is a Worker, AND verified.
-                return WorkerDashboard(workerId: user.uid);
-              } else {
-                // Logged in, is a Worker, but NOT verified.
-                // Keep them on AuthScreen (to see OTP dialog).
-                return const AuthScreen();
-              }
+              return WorkerDashboard(workerId: user.uid);
             }
-
-            // Not a worker. Now we check the 'users' collection.
             return StreamBuilder<DocumentSnapshot>(
               stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
               builder: (context, userSnapshot) {
@@ -66,22 +46,9 @@ class AuthWrapper extends StatelessWidget {
                 }
 
                 if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                  // This is a User. NOW check verification.
-                  final data = userSnapshot.data!.data() as Map<String, dynamic>?;
-                  final isVerified = data?['phone_verified'] ?? false;
-                  
-                  if (isVerified) {
-                    // Logged in, is a User, AND verified.
-                    return UserDashboard(userId: user.uid);
-                  } else {
-                    // Logged in, is a User, but NOT verified.
-                    // Keep them on AuthScreen (to see OTP dialog).
-                    return const AuthScreen();
-                  }
+                  return UserDashboard(userId: user.uid);
                 }
-                
-                // Logged in, but doc doesn't exist in 'users' OR 'workers'.
-                // This happens for a brief moment during sign-up or error states.
+
                 return const AuthScreen();
               },
             );

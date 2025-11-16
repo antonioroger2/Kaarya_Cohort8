@@ -54,7 +54,7 @@ class UserDetailsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Profile Header
+
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -123,7 +123,6 @@ class UserDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Contact Information
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -154,7 +153,6 @@ class UserDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Location Information
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -181,7 +179,6 @@ class UserDetailsScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
 
-                  // Account Information and Trust Score
                   Card(
                     child: Padding(
                       padding: const EdgeInsets.all(16),

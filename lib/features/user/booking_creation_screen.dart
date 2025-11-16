@@ -2,14 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../../core/api_client.dart'; // Import the ApiClient
+import '../../core/api_client.dart'; 
 
 class BookingCreationScreen extends StatefulWidget {
   final String userId;
   final String workerId;
   final String workerName;
   final String workerPhone;
-  // --- MODIFIED: Accept list of categories ---
+
   final List<Map<String, dynamic>> workCategories;
 
   const BookingCreationScreen({
@@ -18,7 +18,7 @@ class BookingCreationScreen extends StatefulWidget {
     required this.workerId, 
     required this.workerName,
     required this.workerPhone,
-    required this.workCategories, // Changed from String serviceType
+    required this.workCategories, 
   });
 
   @override
@@ -31,28 +31,25 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   int _hours = 2;
   bool _isLoading = false;
   final _notesController = TextEditingController();
-  
-  // --- NEW: State for service selection ---
+
   String? _selectedServiceType;
   List<String> _availableServices = [];
 
   @override
   void initState() {
     super.initState();
-    // Populate the list of available services from the worker's categories
+
     _availableServices = widget.workCategories
         .map((cat) => cat['mainCategory'] as String)
         .toList();
-    
-    // Default to the first service if available
+
     if (_availableServices.isNotEmpty) {
       _selectedServiceType = _availableServices.first;
     }
   }
-  // --- END NEW ---
 
   Future<void> _confirmBooking() async {
-    // --- NEW: Validation for service type ---
+
     if (_selectedServiceType == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Please select a service type'),
@@ -60,7 +57,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       ));
       return;
     }
-    // --- END NEW ---
 
     setState(() => _isLoading = true);
 
@@ -74,10 +70,10 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
 
       final workerData = workerSnap.data()!;
       final userData = userSnap.data()!;
-      
+
       final hourlyRate = (workerData['perHourCharge'] ?? 500).toDouble();
       final wage = hourlyRate * _hours;
-      
+
       final bookingDateTime = DateTime(
           _selectedDate.year, 
           _selectedDate.month, 
@@ -85,25 +81,25 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           _selectedTime.hour, 
           _selectedTime.minute
       );
-      
+
       final startHour = _selectedTime.hour;
       final endHour = startHour + _hours;
 
       final bookingPayload = {
         'userId': widget.userId,
         'userPhone': userData['phone'] ?? '',
-        'candidateWorkers': [widget.workerId], // Send as a list
-        'date': DateFormat('yyyy-MM-dd').format(_selectedDate), // Server expects "YYYY-MM-DD"
+        'candidateWorkers': [widget.workerId], 
+        'date': DateFormat('yyyy-MM-dd').format(_selectedDate), 
         'startHour': startHour,
         'endHour': endHour,
         'wage': wage.toInt(),
-        'ta': 0, // Travel Allowance, default to 0
-        // --- MODIFIED: Use the selected service type ---
+        'ta': 0, 
+
         'serviceType': _selectedServiceType,
         'location': {
           'locality': userData['locality'] ?? '',
           'pin': userData['pin'] ?? '',
-          'address': userData['locality'] ?? '', // Add more address info if you have it
+          'address': userData['locality'] ?? '', 
         },
         'notes': _notesController.text.trim(),
       };
@@ -148,7 +144,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- NEW: Service Selection Dropdown ---
+
             const Text('Select Service', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
@@ -174,10 +170,9 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 ),
               ),
             ),
-            // --- END NEW ---
 
             const SizedBox(height: 20),
-            
+
             const Text('Select Date', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
@@ -198,9 +193,9 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 },
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             const Text('Select Start Time', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
@@ -219,9 +214,9 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 },
               ),
             ),
-            
+
             const SizedBox(height: 20),
-            
+
             const Text('Select Duration (Hours)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 12),
             Card(
@@ -256,9 +251,9 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
               ),
               maxLines: 3,
             ),
-            
+
             const SizedBox(height: 40),
-            
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

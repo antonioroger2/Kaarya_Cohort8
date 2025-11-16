@@ -64,7 +64,7 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
       body: DoodleBackground(
         child: Column(
           children: [
-            // CalendarDatePicker Widget
+
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -85,14 +85,13 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
               ),
             ),
 
-            // Daily Schedule List
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                // Fetch all relevant bookings for the worker
+
                 stream: FirebaseFirestore.instance
                     .collection('bookings')
                     .where('workerId', isEqualTo: widget.workerId)
-                    .where('status', whereIn: ['Accepted', 'Completed']) // Show accepted and completed jobs
+                    .where('status', whereIn: ['Accepted', 'Completed']) 
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -100,15 +99,13 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
                   }
 
                   final bookings = snapshot.data?.docs ?? [];
-                  
-                  // Filter bookings for the selected day
+
                   final selectedDayBookings = bookings.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
                     final bookingDate = (data['bookingDate'] as Timestamp).toDate();
                     return DateUtils.isSameDay(bookingDate, _selectedDate);
                   }).toList();
-                  
-                  // Sort by time
+
                   selectedDayBookings.sort((a, b) {
                       final timeA = (a.data() as Map<String, dynamic>)['bookingDate'] as Timestamp;
                       final timeB = (b.data() as Map<String, dynamic>)['bookingDate'] as Timestamp;
@@ -145,10 +142,9 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
                       final status = data['status'];
                       final wage = (data['wage'] ?? 0).toInt();
                       final timeSlot = data['timeSlot'];
-                      
+
                       Color statusColor = status == 'Completed' ? Colors.green : Colors.blue;
 
-                      // Display a simplified card for the schedule view
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
                         child: Container(

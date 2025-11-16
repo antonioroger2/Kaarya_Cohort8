@@ -9,7 +9,7 @@ import '../../features/shared/report_dialog.dart';
 class BookingTile extends StatefulWidget {
   final Map<String, dynamic> bookingData;
   final String? bookingId; 
-  
+
   const BookingTile({super.key, required this.bookingData, this.bookingId});
 
   @override
@@ -18,13 +18,12 @@ class BookingTile extends StatefulWidget {
 
 class _BookingTileState extends State<BookingTile> {
   bool _isCancelling = false;
-  // --- REMOVED: _isCompleting ---
 
   String? get _currentBookingId => widget.bookingId ?? widget.bookingData['id'];
 
   Future<void> _cancelBooking() async {
     if (_currentBookingId == null) return;
-    
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -51,14 +50,12 @@ class _BookingTileState extends State<BookingTile> {
     try {
       final batch = FirebaseFirestore.instance.batch();
       final bookingRef = FirebaseFirestore.instance.collection('bookings').doc(_currentBookingId);
-      
-      // --- MODIFIED: Use new status code ---
+
       final isAccepted = widget.bookingData['status'] == 'a1';
 
-      // 1. Update booking status
       batch.update(bookingRef, {
         'status': 'Cancelled',
-        'log.actions': FieldValue.arrayUnion([ // --- MODIFIED: Log to new structure ---
+        'log.actions': FieldValue.arrayUnion([ 
           {
             'log': 'Client cancelled the booking.',
             'timestamp': Timestamp.now(),
@@ -68,14 +65,8 @@ class _BookingTileState extends State<BookingTile> {
         ])
       });
 
-      // --- REMOVED: Worker availability update ---
-      // This logic is now handled by the server's bitmask and is too
-      // complex to replicate in the app during a cancellation.
-      // A server-side "cancel" endpoint would be required to do this safely.
-
-      // 3. Send notification to worker
       final notificationRef = FirebaseFirestore.instance.collection('notifications').doc();
-      // --- MODIFIED: Get user name from booking data if available ---
+
       final userName = widget.bookingData['userInfo']?['name'] ?? widget.bookingData['userName'] ?? 'A client';
       final bookingDate = (widget.bookingData['bookingDate'] as Timestamp).toDate();
 
@@ -112,8 +103,6 @@ class _BookingTileState extends State<BookingTile> {
     }
   }
 
-  // --- REMOVED: _completeJob function ---
-
   Future<void> _reportIssue(String reportType) async {
     final reportReason = await showDialog<String>(
       context: context,
@@ -124,13 +113,11 @@ class _BookingTileState extends State<BookingTile> {
 
     try {
       final currentUserId = FirebaseAuth.instance.currentUser!.uid;
-      
-      // Determine the user being reported
+
       final reportedUserId = widget.bookingData['workerId'] == currentUserId
           ? widget.bookingData['userId']
           : widget.bookingData['workerId'];
 
-      // Create report document
       await FirebaseFirestore.instance.collection('reports').add({
         'bookingId': _currentBookingId,
         'reporterId': currentUserId,
@@ -162,20 +149,18 @@ class _BookingTileState extends State<BookingTile> {
 
   @override
   Widget build(BuildContext context) {
-    // Get booking data
+
     final date = (widget.bookingData['bookingDate'] as Timestamp).toDate();
     final status = widget.bookingData['status'] ?? 'Unknown';
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
     final workerName = widget.bookingData['workerInfo']?['name'] ?? widget.bookingData['workerName'] ?? 'Worker';
     final userName = widget.bookingData['userInfo']?['name'] ?? widget.bookingData['userName'] ?? 'User';
     final currentUserIsWorker = FirebaseAuth.instance.currentUser!.uid == widget.bookingData['workerId'];
-    
-    // Status visualization
-    // --- MODIFIED: Updated status codes ---
+
     Color statusColor;
     IconData statusIcon;
     switch (status) {
-      case 'e3': // Completed
+      case 'e3': 
         statusColor = Colors.green; 
         statusIcon = Icons.check_circle; 
         break;
@@ -184,27 +169,26 @@ class _BookingTileState extends State<BookingTile> {
         statusColor = Colors.red; 
         statusIcon = Icons.cancel; 
         break;
-      case 'a1': // Accepted
+      case 'a1': 
         statusColor = Colors.blue; 
         statusIcon = Icons.thumb_up; 
         break;
-      case 'w2': // In Progress
+      case 'w2': 
         statusColor = Colors.cyan; 
         statusIcon = Icons.construction; 
         break;
-      case 'w1': // Start OTP Sent
-      case 'e1': // End OTP Sent
-      case 'e2': // End OTP Sent
+      case 'w1': 
+      case 'e1': 
+      case 'e2': 
         statusColor = Colors.deepPurple; 
         statusIcon = Icons.password; 
         break;
-      case 'b1': // Created
-      case 'b2': // Dispatched
+      case 'b1': 
+      case 'b2': 
       default: 
         statusColor = Colors.orange; 
         statusIcon = Icons.pending;
     }
-    // --- END MODIFICATION ---
 
     return InkWell(
       onTap: () {
@@ -213,7 +197,7 @@ class _BookingTileState extends State<BookingTile> {
                 MaterialPageRoute(
                     builder: (_) => BookingDetailsScreen(
                         bookingId: _currentBookingId!,
-                        // --- MODIFICATION: Pass correct user ID ---
+
                         userId: FirebaseAuth.instance.currentUser!.uid,
                         isWorker: currentUserIsWorker,
                     ),
@@ -225,7 +209,7 @@ class _BookingTileState extends State<BookingTile> {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
           children: [
-            // Status Header
+
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -259,14 +243,13 @@ class _BookingTileState extends State<BookingTile> {
                 ],
               ),
             ),
-            
-            // Details
+
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Other Party Info
+
                   Row(
                     children: [
                       CircleAvatar(
@@ -300,10 +283,9 @@ class _BookingTileState extends State<BookingTile> {
                       Icon(Icons.chevron_right, color: Colors.grey[400]),
                     ],
                   ),
-                  
+
                   const Divider(height: 24),
-                  
-                  // Time and Wage Info
+
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -325,12 +307,12 @@ class _BookingTileState extends State<BookingTile> {
                             children: [
                               Icon(Icons.timer, size: 16, color: Colors.grey[600]),
                               const SizedBox(width: 4),
-                              // --- MODIFICATION: Use new hour fields ---
+
                               Text(
                                 '${(widget.bookingData['endHour'] ?? 0) - (widget.bookingData['startHour'] ?? 0)} hours',
                                 style: TextStyle(color: Colors.grey[600]),
                               ),
-                              // --- END MODIFICATION ---
+
                             ],
                           ),
                         ],
@@ -355,9 +337,7 @@ class _BookingTileState extends State<BookingTile> {
                       ),
                     ],
                   ),
-                  
-                  // Conditional Buttons (Actions)
-                  // --- MODIFIED: Updated status codes ---
+
                   if (!currentUserIsWorker && (status == 'b2' || status == 'a1') && !_isCancelling)
                     Padding(
                       padding: const EdgeInsets.only(top: 16),
@@ -389,11 +369,8 @@ class _BookingTileState extends State<BookingTile> {
                         ],
                       ),
                     ),
-                    
-                  // --- REMOVED: Worker "Complete" button ---
-                    
-                  // Loading Indicator
-                  if (_isCancelling) // --- MODIFIED: Removed _isCompleting ---
+
+                  if (_isCancelling) 
                     const Padding(
                       padding: EdgeInsets.only(top: 16),
                       child: Center(

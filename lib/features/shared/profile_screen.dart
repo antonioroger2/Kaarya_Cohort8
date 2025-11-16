@@ -17,8 +17,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
-  
-  // Controllers for form fields
+
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _altPhoneController = TextEditingController();
@@ -26,12 +25,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _descriptionController = TextEditingController();
   final _hourlyRateController = TextEditingController();
   final _idNumberController = TextEditingController();
-  
-  // Worker-specific state
+
   String _idType = 'Aadhar';
   int _experience = 0;
   List<Map<String, dynamic>> _workCategories = [];
-  
+
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -59,7 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _idNumberController.text = data['idDetails']?['number'] ?? '';
       _idType = data['idDetails']?['type'] ?? 'Aadhar';
       _experience = data['experience'] ?? 0;
-      // Deep copy the list to avoid modifying the snapshot data directly
+
       _workCategories = List<Map<String, dynamic>>.from(data['workCategories']?.map((e) => Map<String, dynamic>.from(e)) ?? []);
     }
   }
@@ -71,8 +69,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final collection = widget.isWorker ? 'workers' : 'users';
-    
-    // Base data
+
     Map<String, dynamic> dataToSave = {
       'name': _nameController.text.trim(),
       'phone': _phoneController.text.trim(),
@@ -82,17 +79,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (widget.isWorker) {
       final hourlyRate = int.tryParse(_hourlyRateController.text);
-      
+
       if (hourlyRate == null || hourlyRate <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid hourly rate greater than 0'), backgroundColor: Colors.red));
         return;
       }
-      
+
       if (_workCategories.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add at least one skill category'), backgroundColor: Colors.red));
         return;
       }
-      
+
       if (_idNumberController.text.trim().isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter your ID number'), backgroundColor: Colors.red));
         return;
@@ -114,14 +111,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       await FirebaseFirestore.instance.collection(collection).doc(widget.userId).set(dataToSave, SetOptions(merge: true));
-      
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully!'), backgroundColor: Colors.green));
-      
-      // The StreamBuilder automatically rebuilds and calls _loadUserData on new snapshot
+
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isEditing = true); // Re-enter editing mode if save failed
+      setState(() => _isEditing = true); 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save profile: $e'), backgroundColor: Colors.red));
     }
   }
@@ -162,9 +158,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             );
           }
-          
+
           final data = snapshot.data!.data() as Map<String, dynamic>;
-          // Load data into controllers only when not editing, or the first time
+
           if (!_isEditing) {
             _loadUserData(data);
           }
@@ -178,13 +174,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // General Details
+
                     _buildTextField(controller: _nameController, label: 'Full Name', icon: Icons.person),
                     _buildTextField(controller: _phoneController, label: 'Primary Phone', icon: Icons.phone, keyboardType: TextInputType.phone),
                     _buildTextField(controller: _altPhoneController, label: 'Alternate Phone', icon: Icons.phone_android, required: false, keyboardType: TextInputType.phone),
                     _buildTextField(controller: _pinController, label: '6-Digit Pincode', icon: Icons.location_on, keyboardType: TextInputType.number),
 
-                    // Worker Specific Fields
                     if (widget.isWorker) ...[
                       const SizedBox(height: 16),
                       const Divider(),
@@ -201,8 +196,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
 
                     const SizedBox(height: 24),
-                    
-                    // Save/Cancel Buttons
+
                     if (_isEditing)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -414,7 +408,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            
+
             if (_workCategories.isEmpty)
               Container(
                 padding: const EdgeInsets.all(20),
@@ -433,15 +427,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               )
             else
-              // List of category editors
+
               ..._workCategories.asMap().entries.map((entry) {
                 int idx = entry.key;
                 Map<String, dynamic> category = entry.value;
                 return _buildCategoryEditor(idx, category);
               }),
-              
+
             const SizedBox(height: 16),
-            
+
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -472,7 +466,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _workCategories.add({'mainCategory': 'Plumber', 'tags': []});
     });
-    // Scroll to bottom to show the newly added skill
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -485,7 +479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildCategoryEditor(int index, Map<String, dynamic> category) {
-    // Note: Local state in the builder is necessary for the tag input field
+
     return StatefulBuilder(
       builder: (context, setState) {
         List<String> tags = List<String>.from(category['tags'] ?? []);
@@ -508,7 +502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           return DropdownMenuItem<String>(value: value, child: Text(value));
                         }).toList(),
                         onChanged: _isEditing ? (newValue) {
-                          // Update the outer state
+
                           this.setState(() {
                             _workCategories[index]['mainCategory'] = newValue!;
                           });
@@ -519,7 +513,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.redAccent),
                         onPressed: () {
-                          // Update the outer state
+
                           this.setState(() {
                             _workCategories.removeAt(index);
                           });
@@ -529,7 +523,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // Tags Display
                 Wrap(
                   spacing: 6,
                   children: tags.map((tag) => Chip(
@@ -542,7 +535,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   )).toList(),
                 ),
 
-                // Tag Input
                 if (_isEditing && tags.length < 3)
                   Padding(
                     padding: const EdgeInsets.only(top: 8.0),
@@ -556,7 +548,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onPressed: () {
                             final tag = tagController.text.trim();
                             if (tag.isNotEmpty && !tags.contains(tag)) {
-                              // Update the inner state (for visual update) and outer state (for saving)
+
                               setState(() {
                                 (_workCategories[index]['tags'] as List).add(tag);
                                 tagController.clear();

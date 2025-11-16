@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
-import '../../core/api_client.dart'; // Import ApiClient
-import './rating_dialog.dart'; // Import RatingDialog
+import '../../core/api_client.dart'; 
+import './rating_dialog.dart'; 
 
 class BookingDetailsScreen extends StatefulWidget {
   final String bookingId;
@@ -25,7 +25,7 @@ class BookingDetailsScreen extends StatefulWidget {
 class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   final _otpController = TextEditingController();
   bool _isLoading = false;
-  bool _paymentReceived = false; // This will be used by the User
+  bool _paymentReceived = false; 
 
   @override
   void dispose() {
@@ -44,9 +44,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  // --- API Helper Functions ---
-
-  // CALLED BY USER
   Future<void> _generateStartOtp() async {
     _showLoading(true);
     try {
@@ -65,16 +62,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     }
   }
 
-  // CALLED BY USER
   Future<void> _verifyStartOtp(String correlationId) async {
     _showLoading(true);
-    Navigator.of(context).pop(); // Close dialog
+    Navigator.of(context).pop(); 
     try {
       final response = await ApiClient.post('/verify-start-otp', {
         'bookingId': widget.bookingId,
         'correlationId': correlationId,
         'code': _otpController.text,
-        'verifiedBy': 'user', // User is verifying
+        'verifiedBy': 'user', 
       });
 
       if (response['valid'] == true) {
@@ -87,20 +83,18 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     }
   }
 
-  // CALLED BY USER
   Future<void> _generateEndOtp() async {
     _showLoading(true);
     try {
       final response = await ApiClient.post('/generate-end-otp', {
         'bookingId': widget.bookingId,
-        'requestedBy': 'user', // User is requesting
+        'requestedBy': 'user', 
       });
 
       if (response['ok'] == true) {
-        // --- MODIFIED ---
-        // Success! Worker has the OTP. Show USER the input dialog.
+
         _showOtpVerificationDialog('end', response['correlationId']);
-        // --- END MODIFICATION ---
+
       }
     } catch (e) {
       _showError(e.toString());
@@ -109,17 +103,16 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     }
   }
 
-  // CALLED BY USER
   Future<void> _verifyEndOtp(String correlationId) async {
     _showLoading(true);
-    Navigator.of(context).pop(); // Close dialog
+    Navigator.of(context).pop(); 
     try {
       final response = await ApiClient.post('/verify-end-otp', {
         'bookingId': widget.bookingId,
         'correlationId': correlationId,
         'code': _otpController.text,
-        'verifiedBy': 'user', // User is verifying
-        'paymentReceived': _paymentReceived, // User confirms they paid
+        'verifiedBy': 'user', 
+        'paymentReceived': _paymentReceived, 
       });
 
       if (response['valid'] == true) {
@@ -132,8 +125,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       _showLoading(false);
     }
   }
-
-  // lib/features/shared/booking_details_screen.dart
 
   Future<void> _rateJob(Map<String, dynamic> bookingData) async {
     final workerName = bookingData['workerInfo']?['name'] ?? 'Worker';
@@ -149,9 +140,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     _showLoading(true);
     try {
-      
-      // --- THIS IS THE FIX ---
-      // Call the new server endpoint instead of writing to Firestore
+
       await ApiClient.post('/submit-rating', {
         'userId': widget.userId,
         'bookingId': widget.bookingId,
@@ -159,8 +148,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         'rating': rating,
         'review': 'Rated $rating stars'
       });
-      // --- END FIX ---
-      
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Rating submitted successfully!'),
@@ -173,13 +161,11 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       if (mounted) _showLoading(false);
     }
   }
-  
 
   void _showOtpVerificationDialog(String type, String correlationId) {
     _otpController.clear();
     bool isEndOtp = type == 'end';
-    
-    // Reset payment checkbox state
+
     if (isEndOtp) setState(() => _paymentReceived = false);
 
     showDialog(
@@ -191,14 +177,14 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // --- MODIFIED: Text changed ---
+
                 const Text('Please ask your worker for the 6-digit code and enter it below.'),
                 TextField(
                   controller: _otpController,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
                 ),
-                // --- MODIFIED: This is now for the USER ---
+
                 if (isEndOtp) 
                   CheckboxListTile(
                     title: const Text("I have paid the worker"),
@@ -229,11 +215,9 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  // --- REMOVED: _showOtpDisplayDialog is no longer needed ---
-
   @override
   Widget build(BuildContext context) {
-    // ... (Scaffold and StreamBuilder are unchanged) ...
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Booking Details'),
@@ -258,7 +242,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Widget _buildContent(BuildContext context, Map<String, dynamic> bookingData) {
-    // ... (All the variable declarations are unchanged) ...
+
     final date = (bookingData['bookingDate'] as Timestamp).toDate();
     final status = bookingData['status'] ?? 'Unknown';
     final wage = (bookingData['wage'] ?? 0).toInt();
@@ -287,9 +271,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ... (All the Cards are unchanged) ...
-          
-          // Status Card
+
           Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Booking Status', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -300,7 +282,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Service Details
           Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Service Details', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
@@ -315,7 +296,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // User/Worker Information
           Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(widget.isWorker ? 'Client Information' : 'Worker Information', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
@@ -329,8 +309,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
                   ],),
               ],),),
           ),
-          
-          // --- MODIFIED: Action Buttons Section ---
+
           const SizedBox(height: 24),
           _buildActionButtons(context, bookingData, status, rating),
           const SizedBox(height: 24),
@@ -339,7 +318,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  // --- MODIFIED: Action Button Logic is SWAPPED ---
   Widget _buildActionButtons(BuildContext context, Map<String, dynamic> bookingData, String status, double rating) {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -347,7 +325,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     List<Widget> buttons = [];
 
-    // --- LOGIC FOR WORKER (No buttons, just text) ---
     if (widget.isWorker) {
       switch (status) {
         case 'a1': 
@@ -368,10 +345,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
           break;
       }
     }
-    // --- LOGIC FOR USER (All buttons) ---
+
     else {
       switch (status) {
-        case 'a1': // Job is Accepted, User can start
+        case 'a1': 
           buttons.add(ElevatedButton.icon(
             onPressed: _generateStartOtp,
             icon: const Icon(Icons.play_arrow),
@@ -379,7 +356,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
           ));
           break;
-        case 'w1': // Start OTP is Sent, User must verify
+        case 'w1': 
           buttons.add(ElevatedButton.icon(
             onPressed: () => _showOtpVerificationDialog('start', bookingData['startOTPCorrelationId']),
             icon: const Icon(Icons.password),
@@ -387,7 +364,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
           ));
           break;
-        case 'w2': // Job is In Progress, User can end
+        case 'w2': 
           buttons.add(ElevatedButton.icon(
             onPressed: _generateEndOtp,
             icon: const Icon(Icons.stop),
@@ -395,8 +372,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
           ));
           break;
-        case 'e1': // End OTP Sent (by user)
-        case 'e2': // End OTP Sent (this one is deprecated by new logic)
+        case 'e1': 
+        case 'e2': 
           buttons.add(ElevatedButton.icon(
             onPressed: () => _showOtpVerificationDialog('end', bookingData['endOTPCorrelationId']),
             icon: const Icon(Icons.password),
@@ -404,8 +381,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
           ));
           break;
-        case 'e3': // Job is Completed
-          if (rating == 0) { // Check if not already rated
+        case 'e3': 
+          if (rating == 0) { 
             buttons.add(ElevatedButton.icon(
               onPressed: () => _rateJob(bookingData),
               icon: const Icon(Icons.star),

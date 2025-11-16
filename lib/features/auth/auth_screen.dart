@@ -1,10 +1,10 @@
-// lib/features/auth/auth_screen.dart
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart'; // Required for temp app initialization
+import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -27,8 +27,6 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
   bool _isLocationLoading = false; 
   String? _pincodeError; 
-  
-  // Variable to store the Handshake ID
   String? _serverCorrelationId;
 
   final _passwordController = TextEditingController();
@@ -110,9 +108,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
 
-  // -----------------------------------------------------------
-  // AUTH LOGIC
-  // -----------------------------------------------------------
+
 
   Future<void> _submitAuthForm() async {
     if (!_formKey.currentState!.validate()) return;
@@ -209,115 +205,82 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       debugPrint("Calling /verify-otp-log...");
       final response = await http.post(
-        Uri.parse('$API_BASE_URL/verify-otp-log'),
+        Uri.parse('$API_BASE_URL/verify-otp-log'), 
         headers: { "Content-Type": "application/json", "x-secret-key": API_SECRET },
         body: jsonEncode({
             "phone": phone, 
             "code": code,
-            "correlation_id": _serverCorrelationId 
+            "correlation_id": _serverCorrelationId
         }), 
       ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
 
       if (response.statusCode == 200 && body['valid'] == true) {
-        debugPrint("OTP verified. Creating Firebase user...");
-        await _finalSignUp();
+        await _serverCreateProfile(phone);
       } else {
         throw Exception(body['error'] ?? 'Invalid OTP');
       }
 
     } catch (e) {
       _showError("$e");
+      debugPrint("Error in _verifyOtpAndCreateAccount: $e");
+    } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  /// ✅ UPDATED: Creates account WITHOUT auto-login
-  /// Redirects user to Login Screen after success.
-  Future<void> _finalSignUp() async {
-    final phone = _phoneController.text.trim();
-    final email = '$phone@kaaryaconnect.app';
-    final password = _passwordController.text.trim();
-    
-    FirebaseApp? tempApp;
+  Future<void> _serverCreateProfile(String phone) async {
+    debugPrint("[_serverCreateProfile] Starting...");
 
     try {
-      // 1. Initialize a secondary Firebase App to create user without signing in the main app
-      tempApp = await Firebase.initializeApp(
-        name: 'tempAuthApp_${DateTime.now().millisecondsSinceEpoch}',
-        options: Firebase.app().options,
-      );
 
-      // 2. Create User on the secondary app
-      UserCredential userCredential = await FirebaseAuth.instanceFor(app: tempApp)
-          .createUserWithEmailAndPassword(email: email, password: password);
-      
-      final uid = userCredential.user!.uid;
-
-      // 3. Write Firestore Data (Main instance is fine for writing)
-      final userData = {
-        'id': uid,
-        'name': _nameController.text.trim(),
+      final payload = {
         'phone': phone,
-        'phone_verified': true,
+        'password': _passwordController.text.trim(),
+        'name': _nameController.text.trim(),
         'pin': _pinController.text.trim(),
         'locality': _selectedLocality ?? '',
-        'createdAt': Timestamp.now(),
-        'trustScore': 5.0,
+        'isWorker': _isWorker,
       };
-
-      String collectionPath = _isWorker ? 'workers' : 'users';
-      await FirebaseFirestore.instance.collection(collectionPath).doc(uid).set(userData);
-
-      // 4. Clean up temp app
-      await tempApp.delete();
-
-      // 5. ✅ SUCCESS: Switch to Login Mode & Show Message
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isLoginMode = true; // Switch form to login
-          _passwordController.clear(); // Clear password field
-          // Note: We keep the phone number filled so they can easily login
-        });
-        _showSuccess("Account created successfully! Please login to continue.");
-      }
-
-    } on FirebaseAuthException catch (e) {
-      if (tempApp != null) await tempApp.delete(); // Ensure cleanup
       
-      if (e.code == 'email-already-in-use') {
-        _showError("User already exists. Please login.");
+      debugPrint("[_serverCreateProfile] 1. Calling /complete-signup...");
+      
+      final response = await http.post(
+        Uri.parse('$API_BASE_URL/complete-signup'),
+        headers: { "Content-Type": "application/json", "x-secret-key": API_SECRET },
+        body: jsonEncode(payload),
+      ).timeout(const Duration(seconds: 20));
+
+      final body = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && body['ok'] == true) {
+        await _login();
+        _showSuccess("Phone Verified! Account Created.");
       } else {
-        _showError(e.message ?? 'Sign up failed');
+        throw Exception(body['error'] ?? 'Failed to create profile on server');
       }
-      if (mounted) setState(() => _isLoading = false);
+
     } catch (e) {
-      if (tempApp != null) await tempApp.delete(); // Ensure cleanup
-      _showError("Error: $e");
-      if (mounted) setState(() => _isLoading = false);
+      debugPrint("[_serverCreateProfile] ERROR: $e");
+      _showError("$e");
     }
   }
 
   Future<void> _login() async {
-    setState(() => _isLoading = true);
+
     try {
       final email = '${_phoneController.text.trim()}@kaaryaconnect.app';
       await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email,
         password: _passwordController.text,
       );
-      // AuthWrapper will handle navigation
+
     } on FirebaseAuthException catch (e) {
       _showError(e.message ?? 'Login failed');
     } catch (e) {
       _showError("Error: $e");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

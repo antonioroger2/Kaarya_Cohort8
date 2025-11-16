@@ -19,25 +19,21 @@ class WorkerCard extends StatelessWidget {
     final rating = (worker['avgRating'] ?? 0.0).toDouble();
     final hourlyRate = (worker['perHourCharge'] ?? 0).toInt();
     final name = worker['name'] ?? 'N/A';
-    final phone = worker['phone'] ?? ''; // Include phone for booking creation
+    final phone = worker['phone'] ?? ''; 
     final categories = worker['workCategories'] as List? ?? [];
     final experience = worker['experience'] ?? 0;
     final completedJobs = worker['completedBookings'] ?? 0;
 
-    // --- MODIFICATION START ---
-    // This is the fix. We must manually map the List<dynamic> from Firestore
-    // into a List<Map<String, dynamic>>.
     final List<Map<String, dynamic>> workCategories = categories
         .map((category) => Map<String, dynamic>.from(category as Map))
         .toList();
-    // --- MODIFICATION END ---
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Section
+
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -49,7 +45,7 @@ class WorkerCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                // Profile Avatar
+
                 CircleAvatar(
                   radius: 30,
                   backgroundColor: Colors.white,
@@ -59,8 +55,7 @@ class WorkerCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 16),
-                
-                // Name and Rating
+
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -88,7 +83,6 @@ class WorkerCard extends StatelessWidget {
                   ),
                 ),
 
-                // Hourly Rate
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -106,14 +100,13 @@ class WorkerCard extends StatelessWidget {
               ],
             ),
           ),
-          
-          // Details and Action Button
+
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Skills/Categories
+
                 if (categories.isNotEmpty) ...[
                   const Text(
                     'Skills',
@@ -126,7 +119,7 @@ class WorkerCard extends StatelessWidget {
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    // Use the safely-mapped list here
+
                     children: workCategories.take(3).map((c) {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -142,7 +135,6 @@ class WorkerCard extends StatelessWidget {
                 ],
                 const SizedBox(height: 16),
 
-                // Stats Row
                 Row(
                   children: [
                     Expanded(
@@ -184,7 +176,6 @@ class WorkerCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Book Now Button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
@@ -196,7 +187,7 @@ class WorkerCard extends StatelessWidget {
                             workerId: workerId,
                             workerName: name,
                             workerPhone: phone,
-                            // Pass the safely-mapped list
+
                             workCategories: workCategories,
                           ),
                         ),

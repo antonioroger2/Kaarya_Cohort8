@@ -181,7 +181,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHeader(BuildContext context, double width) {
     final bool isMobile = width < 800;
-    
+
     final leftSection = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -354,8 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            
-            // Categories
+
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -375,7 +374,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Title Row
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -411,14 +409,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Worker Stream
             StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('workers')
                   .snapshots(),
               builder: (context, snapshot) {
 
-                
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const SliverToBoxAdapter(
                     child: Padding(
@@ -427,7 +423,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 }
-
 
                 if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                   return SliverToBoxAdapter(
@@ -454,22 +449,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 workers = workers.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
 
-                  // 1. Availability filter - MODIFIED FOR FIX
-                  // If availability is MISSING, default to 'Y' so the worker shows up
                   final availability = data['availability'] ?? 'Y'; 
                   if (availability != 'Y') return false;
 
-                  // Prepare name + searchText
                   final name = (data['name'] ?? '').toString().toLowerCase();
                   final searchText = _searchController.text.trim().toLowerCase();
 
-                  // Prepare categories list
                   final categoriesList = (data['workCategories'] as List?)
                           ?.map((e) => (e['mainCategory'] ?? '').toString().toLowerCase())
                           .toList()
                       ?? [];
 
-                  // 2. Search filter
                   if (searchText.isNotEmpty) {
                     final matchesName = name.contains(searchText);
                     final matchesSkill = categoriesList.any((c) => c.contains(searchText));
@@ -477,7 +467,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (!matchesName && !matchesSkill) return false;
                   }
 
-                  // 3. Category filter
                   if (_selectedCategory.isNotEmpty) {
                     final selected = _selectedCategory.toLowerCase();
                     if (!categoriesList.contains(selected)) return false;
@@ -486,12 +475,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   return true;
                 }).toList();
 
-
-                // 2. SORTING (Local PINs First + Rating)
                 workers.sort((a, b) {
                   final dataA = a.data() as Map<String, dynamic>;
                   final dataB = b.data() as Map<String, dynamic>;
-                  
+
                   final pinA = _normalize(dataA['pin']);
                   final pinB = _normalize(dataB['pin']);
                   final userPin = _normalize(_userPin);
@@ -518,7 +505,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }
 
-                // Display Grid or List
                 if (width >= 900) {
                   return SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

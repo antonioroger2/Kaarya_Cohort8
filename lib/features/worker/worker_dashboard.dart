@@ -46,7 +46,7 @@ class _WorkerDashboardState extends State<WorkerDashboard> {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: BottomNavigationBar(
             currentIndex: _selectedIndex,
-            selectedItemColor: Colors.teal, // Using teal for better consistency with theme
+            selectedItemColor: Colors.teal, 
             unselectedItemColor: Colors.grey,
             showUnselectedLabels: true,
             type: BottomNavigationBarType.fixed,

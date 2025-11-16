@@ -35,7 +35,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
       appBar: AppBar(
         title: const Text('My Jobs'),
         actions: [
-          // ... (existing actions)
+
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('notifications')
@@ -82,7 +82,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
   }
 
   Widget _buildNewRequestsList() {
-    // --- DEBUG PRINT ---
+
     debugPrint("--- [WorkerJobsScreen] Building NEW REQUESTS list for workerId: ${widget.workerId} ---");
 
     return StreamBuilder<QuerySnapshot>(
@@ -92,34 +92,33 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
           .where('status', isEqualTo: 'pending')
           .snapshots(),
       builder: (context, snapshot) {
-        
+
         if (snapshot.hasError) {
-          // --- DEBUG PRINT ---
+
           debugPrint("--- [WorkerJobsScreen] STREAM ERROR: ${snapshot.error} ---");
           return Center(child: Text("Error: ${snapshot.error}"));
         }
-        
+
         if (snapshot.connectionState == ConnectionState.waiting) {
-          // --- DEBUG PRINT ---
+
           debugPrint("--- [WorkerJobsScreen] Stream waiting...");
           return const Center(child: CircularProgressIndicator());
         }
 
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          // --- DEBUG PRINT ---
+
           debugPrint("--- [WorkerJobsScreen] Stream success, but no data. hasData: ${snapshot.hasData}, isEmpty: ${snapshot.data?.docs.isEmpty} ---");
           return const Center(child: Text('No new job requests.'));
         }
 
         List<DocumentSnapshot> docs = snapshot.data!.docs;
-        
-        // --- DEBUG PRINT ---
+
         debugPrint("--- [WorkerJobsScreen] Stream FOUND ${docs.length} job request(s) ---");
 
         docs.sort((a, b) {
           Timestamp timeA = (a.data() as Map<String, dynamic>)['sentAt'] ?? Timestamp.now();
           Timestamp timeB = (b.data() as Map<String, dynamic>)['sentAt'] ?? Timestamp.now();
-          return timeB.compareTo(timeA); // Newest first
+          return timeB.compareTo(timeA); 
         });
 
         return ListView.builder(
@@ -134,33 +133,31 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
               return const SizedBox.shrink();
             }
 
-            // --- DEBUG PRINT ---
             debugPrint("--- [WorkerJobsChecklist] FutureBuilder trying to GET: ${bookingRef.path} ---");
 
             return FutureBuilder<DocumentSnapshot>(
               future: bookingRef.get(),
               builder: (context, bookingSnapshot) {
-                
+
                 if (bookingSnapshot.hasError) {
-                  // --- DEBUG PRINT ---
+
                   debugPrint("--- [WorkerJobsScreen] FUTURE BUILDER ERROR: ${bookingSnapshot.error} ---");
                   debugPrint("--- [WorkerJobsScreen] THIS IS LIKELY A SECURITY RULE FAILURE ON THE 'bookings' COLLECTION ---");
                   return Card(child: Padding(padding: const EdgeInsets.all(16.0), child: Text("Error loading booking: ${bookingSnapshot.error}", style: const TextStyle(color: Colors.red))));
                 }
-                
+
                 if (bookingSnapshot.connectionState == ConnectionState.waiting) {
                   return const Card(child: Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator())));
                 }
 
                 if (!bookingSnapshot.hasData || !bookingSnapshot.data!.exists) {
-                   // --- DEBUG PRINT ---
+
                   debugPrint("--- [WorkerJobsScreen] FUTURE BUILDER ERROR: Booking doc not found at ${bookingRef.path}. This shouldn't happen. ---");
                   return const Card(child: Padding(padding: EdgeInsets.all(16.0), child: Text('Error: Booking data not found.')));
                 }
 
-                // --- DEBUG PRINT ---
                 debugPrint("--- [WorkerJobsScreen] FutureBuilder SUCCESS for ${bookingRef.path} ---");
-                
+
                 final data = bookingSnapshot.data!.data() as Map<String, dynamic>;
                 return JobRequestCard(
                   bookingData: data, 
@@ -176,8 +173,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
   }
 
   Widget _buildAcceptedJobsList() {
-    // This query is simpler and likely works, but we add debug lines just in case.
-    // --- DEBUG PRINT ---
+
     debugPrint("--- [WorkerJobsScreen] Building ACCEPTED list for workerId: ${widget.workerId} ---");
 
     return StreamBuilder<QuerySnapshot>(
@@ -187,7 +183,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
           .where('status', whereIn: ['a1', 'w1', 'w2'])
           .snapshots(),
       builder: (context, snapshot) {
-        
+
         if (snapshot.hasError) {
           debugPrint("--- [WorkerJobsScreen] ACCEPTED JOBS STREAM ERROR: ${snapshot.error} ---");
           return Center(child: Text("Error: ${snapshot.error}"));

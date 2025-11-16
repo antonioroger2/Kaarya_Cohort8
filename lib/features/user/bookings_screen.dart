@@ -45,16 +45,13 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
         child: TabBarView(
           controller: _tabController,
           children: [
-            // --- MODIFIED: Use new status codes ---
-            // 'a1' (accepted), 'w1' (start OTP sent), 'w2' (in progress)
+
             _buildBookingsList(['a1', 'w1', 'w2']),
-            
-            // 'b1' (created), 'b2' (dispatched)
+
             _buildBookingsList(['b1', 'b2']),
-            
-            // 'e3' (completed), 'Cancelled', 'Rejected'
+
             _buildBookingsList(['e3', 'Cancelled', 'Rejected']),
-            // --- END MODIFICATION ---
+
           ],
         ),
       ),
@@ -74,7 +71,7 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
         }
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           String message;
-          // --- MODIFICATION: Updated status checks ---
+
           if (statuses.contains('a1')) {
             message = "You have no upcoming bookings.";
           } else if (statuses.contains('b2')) {
@@ -82,25 +79,23 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
           } else {
             message = "You have no past bookings.";
           }
-          // --- END MODIFICATION ---
+
           return Center(child: Text(message));
         }
 
         List<DocumentSnapshot> docs = snapshot.data!.docs;
-        
-        // Sort: Upcoming (Ascending date), Others (Descending creation date)
+
         docs.sort((a, b) {
           Map<String, dynamic> dataA = a.data() as Map<String, dynamic>;
           Map<String, dynamic> dataB = b.data() as Map<String, dynamic>;
           Timestamp timeA = dataA['bookingDate'] ?? dataA['createdAt'];
           Timestamp timeB = dataB['bookingDate'] ?? dataB['createdAt'];
-          
-          // --- MODIFICATION: Updated status check ---
+
           if (statuses.contains('a1')) {
-            return timeA.compareTo(timeB); // Upcoming: ASC
+            return timeA.compareTo(timeB); 
           }
-          // --- END MODIFICATION ---
-          return timeB.compareTo(timeA); // History/Pending: DESC
+
+          return timeB.compareTo(timeA); 
         });
 
         return ListView.builder(
@@ -112,7 +107,7 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
             return BookingTile(
               bookingData: data, 
               bookingId: booking.id,
-              // The BookingTile is designed for re-use, but here it's implicitly for a User/Client
+
             );
           },
         );

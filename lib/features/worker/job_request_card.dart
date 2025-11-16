@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../features/worker/user_details_screen.dart';
-import '../../core/api_client.dart'; // Import the ApiClient
+import '../../core/api_client.dart'; 
 
 class JobRequestCard extends StatefulWidget {
   final Map<String, dynamic> bookingData;
   final String bookingId;
   final String workerId;
-  
+
   const JobRequestCard({
     super.key, 
     required this.bookingData, 
@@ -24,10 +24,9 @@ class JobRequestCard extends StatefulWidget {
 class _JobRequestCardState extends State<JobRequestCard> {
   bool _isLoading = false;
 
-  // --- MODIFIED: Use ApiClient for accept/reject ---
   Future<void> _handleJobAction(String action) async {
     setState(() => _isLoading = true);
-    
+
     final endpoint = action == 'Accepted' ? '/worker-accept' : '/worker-reject';
     final payload = {
       'workerId': widget.workerId,
@@ -61,28 +60,24 @@ class _JobRequestCardState extends State<JobRequestCard> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-  
-  // OLD _updateJobStatus function is REMOVED
 
   @override
   Widget build(BuildContext context) {
-    // --- MODIFICATION: Use new server fields ---
+
     final date = (widget.bookingData['bookingDate'] as Timestamp? ?? widget.bookingData['createdAt'] as Timestamp).toDate();
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
     final userId = widget.bookingData['userId'] ?? '';
-    // Use location.locality or notes for display
+
     final location = widget.bookingData['location'] ?? {};
     final locality = location['locality'] ?? 'Unknown';
-    
-    // Fetch user info from the booking root, not a sub-object
-    final userName = widget.bookingData['userName'] ?? 'A user'; // Assuming you might add this
+
+    final userName = widget.bookingData['userName'] ?? 'A user'; 
     final userPhone = widget.bookingData['userPhone'] ?? '';
     final timeSlot = (widget.bookingData['endHour'] ?? 0) - (widget.bookingData['startHour'] ?? 0);
-    // --- END MODIFICATION ---
 
     return InkWell(
       onTap: () {
-        // Navigate to show client details
+
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => UserDetailsScreen(
@@ -97,7 +92,7 @@ class _JobRequestCardState extends State<JobRequestCard> {
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(
           children: [
-            // Header: New Job Request Banner
+
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -126,14 +121,13 @@ class _JobRequestCardState extends State<JobRequestCard> {
                 ],
               ),
             ),
-            
-            // Details
+
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Client Info
+
                   Row(
                     children: [
                       CircleAvatar(
@@ -167,8 +161,7 @@ class _JobRequestCardState extends State<JobRequestCard> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  
-                  // Job Time/Wage Info
+
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -231,7 +224,6 @@ class _JobRequestCardState extends State<JobRequestCard> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Action Buttons
                   if (_isLoading)
                     const Center(
                       child: Padding(
@@ -244,7 +236,7 @@ class _JobRequestCardState extends State<JobRequestCard> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            // --- MODIFIED ---
+
                             onPressed: () => _handleJobAction('Rejected'),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
@@ -257,7 +249,7 @@ class _JobRequestCardState extends State<JobRequestCard> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton.icon(
-                            // --- MODIFIED ---
+
                             onPressed: () => _handleJobAction('Accepted'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,

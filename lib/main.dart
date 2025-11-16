@@ -8,12 +8,12 @@ void main() async {
   // IMPORTANT: Replace with your actual Firebase Options for production
   await Firebase.initializeApp(
     options: const FirebaseOptions(
-      apiKey: "AIzaSyDm4xvZbc35ZNucXFoIBwdVyLd8h22NI1o",
-      authDomain: "cohort8-f5139.firebaseapp.com",
-      projectId: "cohort8-f5139",
-      storageBucket: "cohort8-f5139.appspot.com", 
-      messagingSenderId: "1006872143391",
-      appId: "1:1006872143391:web:08873239c279e68f12172a"
+      apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
     ),
   );
   runApp(const KaaryaConnectApp());

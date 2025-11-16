@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import '../../features/shared/booking_details_screen.dart';
-// --- REMOVED: rating_dialog.dart ---
 
 class InboxScreen extends StatefulWidget {
   final String userId;
@@ -29,7 +28,7 @@ class _InboxScreenState extends State<InboxScreen> {
           stream: FirebaseFirestore.instance
               .collection('notifications')
               .where('recipientId', isEqualTo: widget.userId)
-              // Order by creation time in descending order (newest first)
+
               .orderBy('createdAt', descending: true)
               .snapshots(),
           builder: (context, snapshot) {
@@ -78,7 +77,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     icon = Icons.check_circle;
                     color = Colors.green;
                     break;
-                  case 'job_completed': // This notification now just informs the user
+                  case 'job_completed': 
                     icon = Icons.done_all;
                     color = Colors.blue;
                     break;
@@ -139,7 +138,7 @@ class _InboxScreenState extends State<InboxScreen> {
                             )
                           : null,
                       onTap: () async {
-                        // 1. Mark as read
+
                         if (!isRead) {
                           await FirebaseFirestore.instance
                               .collection('notifications')
@@ -147,8 +146,6 @@ class _InboxScreenState extends State<InboxScreen> {
                               .update({'isRead': true});
                         }
 
-                        // --- MODIFICATION: Removed rating logic ---
-                        // 2. Navigate to booking details for ALL booking-related notifications
                         if (bookingId != null) {
                           Navigator.of(context).push(
                             MaterialPageRoute(
@@ -160,7 +157,7 @@ class _InboxScreenState extends State<InboxScreen> {
                             ),
                           );
                         }
-                        // --- END MODIFICATION ---
+
                       },
                     ),
                   ),
@@ -173,5 +170,4 @@ class _InboxScreenState extends State<InboxScreen> {
     );
   }
 
-  // --- REMOVED: _showJobCompletionDialog and _confirmJobCompletion functions ---
 }

@@ -1,4 +1,3 @@
-// lib/features/shared/rating_dialog.dart
 import 'package:flutter/material.dart';
 
 class RatingDialog extends StatefulWidget {
@@ -43,11 +42,11 @@ class _RatingDialogState extends State<RatingDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(), // Returns null
+          onPressed: () => Navigator.of(context).pop(), 
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(_rating), // Returns the selected rating
+          onPressed: () => Navigator.of(context).pop(_rating), 
           child: const Text('Submit Rating'),
         ),
       ],

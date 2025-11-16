@@ -1,4 +1,3 @@
-// lib/features/shared/report_dialog.dart
 import 'package:flutter/material.dart';
 
 class ReportDialog extends StatefulWidget {
@@ -45,7 +44,7 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(height: 16),
             const Text('Select a reason:'),
             const SizedBox(height: 8),
-            // Reason radio buttons
+
             ..._commonReasons.map((reason) => RadioListTile<String>(
               title: Text(reason),
               value: reason,
@@ -53,10 +52,9 @@ class _ReportDialogState extends State<ReportDialog> {
               onChanged: (value) => setState(() => _selectedReason = value!),
               dense: true,
             )),
-            
+
             const SizedBox(height: 16),
-            
-            // Other reason text field
+
             if (_selectedReason == 'Other')
               TextField(
                 controller: _reasonController,
@@ -71,7 +69,7 @@ class _ReportDialogState extends State<ReportDialog> {
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(context).pop(), // Returns null
+          onPressed: () => Navigator.of(context).pop(), 
           child: const Text('Cancel'),
         ),
         ElevatedButton(
@@ -79,9 +77,9 @@ class _ReportDialogState extends State<ReportDialog> {
             final reason = _selectedReason == 'Other'
                 ? _reasonController.text.trim()
                 : _selectedReason;
-            
+
             if (reason.isNotEmpty) {
-              Navigator.of(context).pop(reason); // Returns the selected/entered reason
+              Navigator.of(context).pop(reason); 
             }
           },
           style: ElevatedButton.styleFrom(

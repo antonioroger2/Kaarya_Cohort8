@@ -266,6 +266,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// Standard Login Function (Unchanged)
   Future<void> _login() async {
 
     try {
@@ -283,6 +284,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
   @override
   Widget build(BuildContext context) {
+    // ... [Your existing, unchanged build() method] ...
     return Scaffold(
       appBar: AppBar(title: const Text('Kaarya Connect')),
       body: Center(

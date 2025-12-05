@@ -1,0 +1,49 @@
+# Flutter & Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# VS Code
+.vscode/
+
+# Bytecode / misc
+*.log
+*.pyc
+*.swp
+.DS_Store
+
+# Android
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+**/android/local.properties
+
+# iOS
+**/ios/Flutter/.last_build_id
+**/ios/Pods
+**/ios/.symlinks
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+
+# Web build
+build/web/
+
+# Linux/Mac/Windows build
+linux/build/
+macos/Build/
+windows/build/
+
+# PythonAnywhere / Server
+.env
+__pycache__/

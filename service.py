@@ -26,7 +26,7 @@ def save(file, data):
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
-HF_API_KEY = "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"   
+HF_API_KEY = "api"   
 HF_EMB_URL = "https://router.huggingface.co/hf-inference/models/BAAI/bge-large-en-v1.5/pipeline/feature-extraction"
 HF_LLM_URL = "https://router.huggingface.co/v1/chat/completions"
 
@@ -45,7 +45,7 @@ headers_llm = {
     "Content-Type": "application/json"
 }
 
-PINECONE_API_KEY = "pcsk_2rWNz3_R4Xj1roK7EYXmwwPwxLXm8ix2TcscAXnujuZBccfo5nXjsWEeqegYnSSxc82N3E"
+PINECONE_API_KEY = "key"
 PINECONE_HOST = "https://llama-text-embed-v2-index-0s8x0bx.svc.aped-4627-b74a.pinecone.io"
 
 headers_pinecone = {

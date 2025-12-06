@@ -150,7 +150,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Signup complete! Redirecting..."), backgroundColor: Colors.green));
         // Success - navigate to the worker dashboard/home
-        Navigator.of(context).pushReplacementNamed('/worker-home');
+        Navigator.of(context).pushReplacementNamed('/');
       } else {
         final errorBody = jsonDecode(response.body);
         throw Exception(errorBody['error'] ?? 'Signup failed');

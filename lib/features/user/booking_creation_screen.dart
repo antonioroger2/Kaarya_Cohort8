@@ -1,33 +1,27 @@
-import 'dart:convert'; // REQUIRED for JSON decoding
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http; // REQUIRED for Nominatim API
+import 'package:http/http.dart' as http;
 import '../../core/api_client.dart'; 
 import '../../features/auth/auth_screen.dart';
 
-class BookingCreationScreen extends StatefulWidget {
-  final String userId;
-  final String workerId;
-  final String workerName;
-  final String workerPhone;
-  final List<Map<String, dynamic>> workCategories;
-  final int workingStartHour; 
-  final int workingEndHour;   
+// Assuming this path exists if you commented it out: import '../../core/theme.dart';
 
+class BookingCreationScreen extends StatefulWidget {
+  // REFACTORED: Simplified constructor to accept the full worker map
+  final String userId;
+  final Map<String, dynamic> preSelectedWorker; 
+
+  // Static variable for pending data remains, but fields are generic
   static Map<String, dynamic>? pendingBookingData;
 
   const BookingCreationScreen({
     super.key, 
     required this.userId, 
-    required this.workerId, 
-    required this.workerName,
-    required this.workerPhone,
-    required this.workCategories,
-    this.workingStartHour = 0,
-    this.workingEndHour = 24,
+    required this.preSelectedWorker, 
   });
 
   @override
@@ -35,6 +29,15 @@ class BookingCreationScreen extends StatefulWidget {
 }
 
 class _BookingCreationScreenState extends State<BookingCreationScreen> {
+  // --- Worker Info Extracted from preSelectedWorker ---
+  late final String workerId;
+  late final String workerName;
+  late final String workerPhone;
+  late final Map<String, dynamic> workerCwData;
+  late final int workingStartHour = 0; 
+  late final int workingEndHour = 24;  
+  late final double hourlyRate;
+
   // --- State Variables ---
   DateTime _selectedDate = DateTime.now(); 
   int? _selectedStartHour; 
@@ -48,29 +51,65 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   final _addressController = TextEditingController(); 
   final _landmarkController = TextEditingController(); 
   
-  String? _selectedServiceType;
-  List<String> _availableServices = [];
+  // Multi-Skill Fields
+  String? _selectedServiceCategory;
+  String? _selectedServiceTask;
+  List<String> _availableCategories = [];
+  List<String> _availableTasks = [];
+
   Map<String, dynamic>? _userData;
 
-  // --- NEW: GPS & TA Variables ---
+  // --- GPS & TA Variables ---
   Position? _currentPosition;
-  String? _nominatimAddress; // Stores the hidden reverse-geocoded address
+  String? _nominatimAddress;
   bool _isGettingLocation = false;
   final int _baseTA = 38; 
 
   @override
   void initState() {
     super.initState();
+    
+    // --- 0. EXTRACT WORKER DATA ---
+    workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
+    workerName = widget.preSelectedWorker['name'] ?? 'Worker';
+    workerPhone = widget.preSelectedWorker['phone'] ?? '';
+    // Safely cast cw_data which holds the nested skill map (Category -> TaskSlug -> TaskDetails)
+    workerCwData = widget.preSelectedWorker['cw_data'] as Map<String, dynamic>? ?? {};
+    hourlyRate = (widget.preSelectedWorker['perHourCharge'] as num?)?.toDouble() ?? 500.0;
+
+
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     
-    _availableServices = widget.workCategories.map((cat) => cat['mainCategory'] as String).toList();
-    if (_availableServices.isNotEmpty) _selectedServiceType = _availableServices.first;
+    // --- 1. INITIALIZE CATEGORIES ---
+    if (workerCwData.isNotEmpty) {
+      _availableCategories = workerCwData.keys.toList();
+      _selectedServiceCategory = _availableCategories.first;
+      _updateAvailableTasks(_selectedServiceCategory!);
+    } else {
+      // Fallback for workers without detailed cw_data
+      _availableCategories = ['General'];
+      _availableTasks = ['General Task'];
+      _selectedServiceCategory = 'General';
+      _selectedServiceTask = 'General Task';
+    }
 
     _fetchUserData();
     _fetchAvailability();
     _checkPendingData();
   }
+  
+  void _updateAvailableTasks(String category) {
+    if (workerCwData.containsKey(category)) {
+      setState(() {
+        final tasksMap = workerCwData[category] as Map<String, dynamic>;
+        // Extract the actual task name from the nested map values
+        _availableTasks = tasksMap.values.map((e) => e['name'].toString()).toList();
+        _selectedServiceTask = _availableTasks.isNotEmpty ? _availableTasks.first : null;
+      });
+    }
+  }
+
 
   @override
   void dispose() {
@@ -102,15 +141,21 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   void _checkPendingData() {
     if (BookingCreationScreen.pendingBookingData != null) {
       final data = BookingCreationScreen.pendingBookingData!;
-      if (data['workerId'] == widget.workerId) {
+      if (data['workerId'] == workerId) { 
         setState(() {
           _selectedDate = data['date'];
           _selectedStartHour = data['hour'];
           _hours = data['hours'];
           _notesController.text = data['notes'];
-          _selectedServiceType = data['serviceType'];
+          _selectedServiceCategory = data['serviceCategory'];
+          _selectedServiceTask = data['serviceTask'];
           _addressController.text = data['address'] ?? '';
           _landmarkController.text = data['landmark'] ?? '';
+          
+          // Re-populate tasks based on restored category
+          if (_selectedServiceCategory != null) {
+            _updateAvailableTasks(_selectedServiceCategory!);
+          }
         });
         
         BookingCreationScreen.pendingBookingData = null;
@@ -133,7 +178,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
       final response = await ApiClient.post('/get-worker-availability', {
-        'workerId': widget.workerId,
+        'workerId': workerId, 
         'date': dateStr,
       });
       if (response['ok'] == true) {
@@ -153,8 +198,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     final now = DateTime.now();
     final minBookingTime = now.add(const Duration(hours: 1));
     
-    for (int hour = widget.workingStartHour; hour < widget.workingEndHour; hour++) {
-      if (hour + _hours > widget.workingEndHour) continue;
+    for (int hour = workingStartHour; hour < workingEndHour; hour++) {
+      if (hour + _hours > workingEndHour) continue;
       
       bool isSlotBlockAvailable = true;
       for (int i = 0; i < _hours; i++) {
@@ -172,15 +217,11 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   }
 
   // --- 5. GPS & Reverse Geocoding Logic ---
-
-  // New Helper: Call Nominatim API
   Future<void> _getNominatimAddress(double lat, double lon) async {
     try {
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
       );
-      
-      // Nominatim requires a User-Agent header
       final response = await http.get(url, headers: {
         'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)' 
       });
@@ -190,7 +231,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         setState(() {
           _nominatimAddress = decoded['display_name'];
         });
-        debugPrint("Nominatim Address Fetched: $_nominatimAddress");
       }
     } catch (e) {
       debugPrint("Reverse Geocoding Failed: $e");
@@ -225,7 +265,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         _currentPosition = position;
       });
 
-      // Trigger Reverse Geocoding silently
       await _getNominatimAddress(position.latitude, position.longitude);
       
       if (mounted) {
@@ -254,8 +293,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   // --- 6. Submit Booking ---
   Future<void> _confirmBooking() async {
     // Validation
-    if (_selectedServiceType == null || _selectedStartHour == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select service and time.'), backgroundColor: Colors.orange));
+    if (_selectedServiceCategory == null || _selectedServiceTask == null || _selectedStartHour == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select Category, Task, and Time.'), backgroundColor: Colors.orange));
       return;
     }
     if (_addressController.text.trim().isEmpty && _currentPosition == null) {
@@ -267,10 +306,17 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       BookingCreationScreen.pendingBookingData = {
-        'workerId': widget.workerId, 'workerName': widget.workerName, 'workerPhone': widget.workerPhone,
-        'workCategories': widget.workCategories, 'date': _selectedDate, 'hour': _selectedStartHour,
-        'hours': _hours, 'notes': _notesController.text, 'serviceType': _selectedServiceType,
-        'address': _addressController.text, 'landmark': _landmarkController.text
+        'workerId': workerId, 
+        'workerName': workerName, 
+        'workerPhone': workerPhone,
+        'serviceCategory': _selectedServiceCategory,
+        'serviceTask': _selectedServiceTask,
+        'date': _selectedDate, 
+        'hour': _selectedStartHour,
+        'hours': _hours, 
+        'notes': _notesController.text, 
+        'address': _addressController.text, 
+        'landmark': _landmarkController.text
       };
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
       if (FirebaseAuth.instance.currentUser != null && mounted) Navigator.of(context).pop(); 
@@ -279,26 +325,21 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
 
     setState(() => _isLoading = true);
     try {
+      // Fetch user data if missed
       if (_userData == null && widget.userId.isNotEmpty) {
           final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
           if (userDoc.exists) _userData = userDoc.data();
       }
       
-      final workerSnap = await FirebaseFirestore.instance.collection('workers').doc(widget.workerId).get();
-      if (!workerSnap.exists) throw Exception("Worker not found.");
-      final workerData = workerSnap.data()!;
-      final hourlyRate = (workerData['perHourCharge'] ?? 500).toDouble();
-      
       final userName = _userData?['name'] ?? 'Anonymous User';
       final userPhone = _userData?['phone'] ?? '';
       
+      final calculatedWage = (hourlyRate * _hours).toInt();
+
       // --- ADDRESS PADDING LOGIC ---
       String finalAddress = _addressController.text.trim();
-      
-      // If GPS was used, pad the address field with raw GPS and the hidden Nominatim address
       if (_currentPosition != null) {
         finalAddress += "\n[GPS Coordinates: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}]";
-        
         if (_nominatimAddress != null && _nominatimAddress!.isNotEmpty) {
           finalAddress += "\n[GPS Detected Address: $_nominatimAddress]";
         }
@@ -309,30 +350,27 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         'userId': currentUser.uid,
         'userPhone': userPhone,
         'userName': userName, 
-        'workerId': widget.workerId, 
+        'workerId': workerId, 
         
-        'userInfo': {
-            'name': userName,
-            'phone': userPhone,
-            'email': _userData?['email'] ?? '',
-        },
-        'workerInfo': {
-            'name': widget.workerName,
-            'phone': widget.workerPhone,
-        },
+        'userInfo': {'name': userName, 'phone': userPhone, 'email': _userData?['email'] ?? ''},
+        'workerInfo': {'name': workerName, 'phone': workerPhone},
 
-        'candidateWorkers': [widget.workerId], 
+        'candidateWorkers': [workerId], 
         'date': DateFormat('yyyy-MM-dd').format(_selectedDate), 
         'startHour': _selectedStartHour!,
         'endHour': _selectedStartHour! + _hours,
-        'wage': (hourlyRate * _hours).toInt(),
+        'wage': calculatedWage,
         'ta': _baseTA, 
-        'serviceType': _selectedServiceType,
+        
+        // NEW FIELDS
+        'serviceCategory': _selectedServiceCategory,
+        'serviceTask': _selectedServiceTask,
+        'serviceType': _selectedServiceTask, // Used for backend indexing
         
         'location': {
           'locality': _userData?['locality'] ?? 'Unknown',
           'pin': _userData?['pin'] ?? '',
-          'address': finalAddress, // SENT MODIFIED ADDRESS
+          'address': finalAddress,
           'landmark': _landmarkController.text.trim(),
           'latitude': _currentPosition?.latitude, 
           'longitude': _currentPosition?.longitude,
@@ -351,8 +389,9 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         throw Exception(response['error'] ?? 'Failed');
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -363,19 +402,33 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     final availableSlots = _getAvailableStartSlots();
 
     return Scaffold(
-      appBar: AppBar(title: Text('Book ${widget.workerName}')),
+      appBar: AppBar(title: Text('Book $workerName')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- Service Type ---
+            // --- Service Category & Task (Updated Dropdowns) ---
             _buildSectionTitle('Service Details'),
+            
+            // Category Dropdown
             DropdownButtonFormField<String>(
-              value: _selectedServiceType,
-              items: _availableServices.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setState(() => _selectedServiceType = v),
-              decoration: const InputDecoration(labelText: "Service Type", border: OutlineInputBorder()),
+              value: _selectedServiceCategory,
+              items: _availableCategories.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              onChanged: (v) {
+                setState(() => _selectedServiceCategory = v);
+                if (v != null) _updateAvailableTasks(v);
+              },
+              decoration: const InputDecoration(labelText: "Service Category", border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            
+            // Task Dropdown
+            DropdownButtonFormField<String>(
+              value: _selectedServiceTask,
+              items: _availableTasks.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              onChanged: (v) => setState(() => _selectedServiceTask = v),
+              decoration: const InputDecoration(labelText: "Specific Task", border: OutlineInputBorder()),
             ),
             const SizedBox(height: 16),
             
@@ -491,7 +544,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 )
               ],
             ),
-            
+
             // --- Slots ---
             const SizedBox(height: 10),
             if (_isFetchingSlots) 

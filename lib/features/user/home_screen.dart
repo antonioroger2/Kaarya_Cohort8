@@ -53,17 +53,27 @@ class _HomeScreenState extends State<HomeScreen> {
       if (BookingCreationScreen.pendingBookingData != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final data = BookingCreationScreen.pendingBookingData!;
+          
+          // CRITICAL FIX: Reconstruct the full worker map needed by the new constructor
+          final Map<String, dynamic> workerMap = {
+            'uid': data['workerId'],
+            'name': data['workerName'],
+            'phone': data['workerPhone'],
+            'cw_data': data['workerCwData'], // Use the new data field
+            'perHourCharge': data['hourlyRate'], // Assuming you saved this scalar
+            // Add other necessary fields if they were stored in pendingBookingData
+          };
+
           Navigator.of(context).push(
             MaterialPageRoute(
               builder: (_) => BookingCreationScreen(
                 userId: widget.userId, // Now we have the logged-in ID
-                workerId: data['workerId'],
-                workerName: data['workerName'],
-                workerPhone: data['workerPhone'],
-                workCategories: data['workCategories'],
+                preSelectedWorker: workerMap, // Pass the single map argument
               ),
             ),
           );
+          // Clear pending data immediately after using it
+          BookingCreationScreen.pendingBookingData = null; 
         });
       }
     } else {
@@ -474,10 +484,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   final name = (data['name'] ?? '').toString().toLowerCase();
                   final searchText = _searchController.text.trim().toLowerCase();
 
-                  final categoriesList = (data['workCategories'] as List?)
-                          ?.map((e) => (e['mainCategory'] ?? '').toString().toLowerCase())
-                          .toList()
-                      ?? [];
+                  // NEW FILTER LOGIC: Checks both old and new multi-skill data structure
+                  final cwData = data['cw_data'] as Map<String, dynamic>? ?? {};
+                  final categoriesList = cwData.keys.map((c) => c.toLowerCase()).toList();
 
                   if (searchText.isNotEmpty) {
                     final matchesName = name.contains(searchText);

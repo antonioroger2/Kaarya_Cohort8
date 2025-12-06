@@ -1,6 +1,5 @@
-// lib/features/user/worker_card.dart
 import 'package:flutter/material.dart';
-import '../../features/user/booking_creation_screen.dart';
+import '../../features/user/booking_creation_screen.dart'; 
 
 class WorkerCard extends StatelessWidget {
   final Map<String, dynamic> worker;
@@ -14,25 +13,32 @@ class WorkerCard extends StatelessWidget {
     required this.userId
   });
 
+  // Helper to extract top 3 categories from nested data
+  List<String> _getTopCategories(Map<String, dynamic> cwData) {
+    if (cwData.isEmpty) return ['Generalist'];
+    return cwData.keys.toList().take(3).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final rating = (worker['avgRating'] ?? 0.0).toDouble();
-    final hourlyRate = (worker['perHourCharge'] ?? 0).toInt();
+    final rating = (worker['avgRating'] as num?)?.toDouble() ?? 0.0;
+    final hourlyRate = (worker['perHourCharge'] as num?)?.toInt() ?? 0;
     final name = worker['name'] ?? 'N/A';
-    final phone = worker['phone'] ?? ''; 
-    final categories = worker['workCategories'] as List? ?? [];
-    final experience = worker['experience'] ?? 0;
-    final completedJobs = worker['completedBookings'] ?? 0;
+    final completedJobs = (worker['completedBookings'] as num?)?.toInt() ?? 0;
+    
+    // NEW: Access nested data
+    final cwData = worker['cw_data'] as Map<String, dynamic>? ?? {};
+    final displayCategories = _getTopCategories(cwData);
 
-    final List<Map<String, dynamic>> workCategories = categories
-        .map((category) => Map<String, dynamic>.from(category as Map))
-        .toList();
+    // Placeholder or legacy fields
+    final experience = worker['experience'] ?? 0; 
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // --- HEADER: Name, Multi-Skills, Hourly Rate ---
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -66,6 +72,11 @@ class WorkerCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
+                      Text(
+                        displayCategories.join(' / '), // Display top categories
+                        style: const TextStyle(color: Colors.white70, fontSize: 13),
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         children: [
                           const Icon(Icons.star, size: 16, color: Colors.amber),
@@ -79,6 +90,7 @@ class WorkerCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                // Hourly Rate Container (Restored)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -96,44 +108,40 @@ class WorkerCard extends StatelessWidget {
               ],
             ),
           ),
+          // --- BODY: Expertise Chips, Stats, Button ---
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (categories.isNotEmpty) ...[
-                  const Text(
-                    'Skills',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                // Display specific skills as chips (Restored new logic)
+                if (cwData.isNotEmpty) ...[
+                  const Text('Expertise', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
-                    children: workCategories.take(3).map((c) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: Text(c['mainCategory'] ?? 'Skill'),
-                      );
-                    }).toList(),
+                    children: cwData.entries.expand((catEntry) {
+                      final tasks = catEntry.value as Map<String, dynamic>;
+                      return tasks.entries.map((taskEntry) {
+                        return Chip(
+                          label: Text(taskEntry.value['name'] ?? 'Task'),
+                          backgroundColor: Colors.teal.shade50,
+                          labelStyle: TextStyle(color: Colors.teal.shade800, fontSize: 12),
+                        );
+                      });
+                    }).take(4).toList(), // Limit visible skills
                   ),
+                  const SizedBox(height: 16),
                 ],
-                const SizedBox(height: 16),
+                // Stats Row (Restored)
                 Row(
                   children: [
                     Expanded(
                       child: Column(
                         children: [
                           Text(
-                            '$experience+',
+                            '${experience}+',
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
@@ -167,19 +175,19 @@ class WorkerCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
+                // Book Now Button (Restored)
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      // Directly navigate to booking screen, no login check here
+                      // Navigate to booking screen, passing the full worker map
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => BookingCreationScreen(
+                            // This assumes BookingCreationScreen is refactored
+                            // to accept the full worker map.
                             userId: userId,
-                            workerId: workerId,
-                            workerName: name,
-                            workerPhone: phone,
-                            workCategories: workCategories,
+                            preSelectedWorker: worker, 
                           ),
                         ),
                       );

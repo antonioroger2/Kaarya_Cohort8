@@ -8,6 +8,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+// NEW IMPORT: Required for the multi-step worker flow
+import '../auth/worker_onboard_screen.dart'; 
 
 const String API_BASE_URL = "https://hawk4aynahtirk.pythonanywhere.com"; 
 const String API_SECRET = "HiFhGDorJRULc1Z"; 
@@ -158,15 +160,19 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-          ElevatedButton(onPressed: () { Navigator.pop(ctx); _verifyOtpAndCreateAccount(phone, _otpController.text.trim()); }, child: const Text("Verify & Sign Up"))
+          // Renamed button text to indicate the split flow
+          ElevatedButton(onPressed: () { Navigator.pop(ctx); _verifyOtpAndCreateAccount(phone, _otpController.text.trim()); }, child: Text(_isWorker ? "Verify & Continue" : "Verify & Sign Up"))
         ],
       ),
     );
   }
 
+  // MODIFIED: This function now handles the branching logic for User vs Worker
   Future<void> _verifyOtpAndCreateAccount(String phone, String code) async {
     if (code.length != 6) { _showError("OTP must be 6 digits"); return; }
     setState(() => _isLoading = true);
+    
+    // 1. Verify OTP with backend API
     try {
       final response = await http.post(
         Uri.parse('$API_BASE_URL/verify-otp-log'), 
@@ -175,13 +181,45 @@ class _AuthScreenState extends State<AuthScreen> {
       ).timeout(const Duration(seconds: 15));
 
       final body = jsonDecode(response.body);
-      if (response.statusCode == 200 && body['valid'] == true) {
-        await _serverCreateProfile(phone);
-      } else { throw Exception(body['error'] ?? 'Invalid OTP'); }
-    } catch (e) { _showError("$e"); } finally { if (mounted) setState(() => _isLoading = false); }
+      if (response.statusCode != 200 || body['valid'] != true) {
+        throw Exception(body['error'] ?? 'Invalid OTP');
+      }
+
+      // 2. OTP SUCCESS: Decide the next step
+      if (_isWorker) {
+        // WORKER FLOW: Navigate to AI Onboarding Screen
+        final Map<String, dynamic> signupData = {
+          'password': _passwordController.text.trim(),
+          'name': _nameController.text.trim(),
+          'pin': _pinController.text.trim(),
+          'locality': _selectedLocality ?? '',
+          'hourlyRate': '300', // Default rate
+        };
+
+        if (mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => WorkerOnboardingScreen(
+                phoneNumber: phone,
+                uid: phone, 
+                baseSignupData: signupData, // Pass collected data
+              ),
+            ),
+          );
+        }
+      } else {
+        // USER FLOW: Complete registration directly
+        await _completeUserSignup(phone);
+      }
+    } catch (e) { 
+      _showError("$e"); 
+    } finally { 
+      if (mounted) setState(() => _isLoading = false); 
+    }
   }
 
-  Future<void> _serverCreateProfile(String phone) async {
+  // RENAMED & MODIFIED: Only handles the final user registration API call
+  Future<void> _completeUserSignup(String phone) async {
     try {
       final payload = {
         'phone': phone,
@@ -189,7 +227,7 @@ class _AuthScreenState extends State<AuthScreen> {
         'name': _nameController.text.trim(),
         'pin': _pinController.text.trim(),
         'locality': _selectedLocality ?? '',
-        'isWorker': _isWorker,
+        'isWorker': false, // Explicitly false for this path
       };
       final response = await http.post(
         Uri.parse('$API_BASE_URL/complete-signup'),
@@ -199,11 +237,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
       final body = jsonDecode(response.body);
       if (response.statusCode == 200 && body['ok'] == true) {
-        await _login(); // Auto login after signup
-        // The _login function will handle navigation pop
+        await _login();
       } else { throw Exception(body['error'] ?? 'Failed to create profile'); }
     } catch (e) { _showError("$e"); }
   }
+
 
   Future<void> _login() async {
     try {
@@ -213,8 +251,6 @@ class _AuthScreenState extends State<AuthScreen> {
         password: _passwordController.text,
       );
       
-      // --- KEY CHANGE: POP IF PUSHED ---
-      // If this screen was pushed (e.g., from Booking Screen), pop it.
       if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context);
       }
@@ -257,7 +293,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     keyboardType: TextInputType.phone,
                     maxLength: 10,
                     decoration: InputDecoration(labelText: '10-Digit Phone Number', counterText: "", prefixIcon: const Icon(Icons.phone_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
-                    validator: (v) => (v == null || !RegExp(r'^[0-9]{10}$').hasMatch(v)) ? 'Must be 10 digits' : null,
+                    validator: (v) => (v == null || RegExp(r'^[0-9]{10}$').hasMatch(v) == false) ? 'Must be 10 digits' : null,
                   ),
                   const SizedBox(height: 16),
 

@@ -1,4 +1,4 @@
-// lib/features/user/booking_creation_screen.dart
+// lib/features/user/general_booking_screen.dart
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -10,58 +10,41 @@ import 'package:http/http.dart' as http;
 import '../../core/api_client.dart'; 
 import '../../features/auth/auth_screen.dart';
 
-// Assuming this path exists if you commented it out: import '../../core/theme.dart';
-
-class BookingCreationScreen extends StatefulWidget {
-  // REFACTORED: Simplified constructor to accept the full worker map
+class GeneralBookingScreen extends StatefulWidget {
   final String userId;
-  final Map<String, dynamic> preSelectedWorker; 
 
-  // Static variable for pending data remains, but fields are generic
-  // CRITICAL: Must store complex data types like Map for cw_data
-  static Map<String, dynamic>? pendingBookingData;
-
-  const BookingCreationScreen({
+  const GeneralBookingScreen({
     super.key, 
     required this.userId, 
-    required this.preSelectedWorker, 
   });
 
   @override
-  State<BookingCreationScreen> createState() => _BookingCreationScreenState();
+  State<GeneralBookingScreen> createState() => _GeneralBookingScreenState();
 }
 
-class _BookingCreationScreenState extends State<BookingCreationScreen> {
-  // --- Worker Info Extracted from preSelectedWorker ---
-  late final String workerId;
-  late final String workerName;
-  late final String workerPhone;
-  late final Map<String, dynamic> workerCwData;
-  late final int workingStartHour = 0; 
-  late final int workingEndHour = 24;  
-  late final double hourlyRate;
+class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
+  
+  final double _defaultHourlyRate = 400.0; 
+  final int workingStartHour = 0; 
+  final int workingEndHour = 24;  
+  final int _minNotesLength = 20; // New minimum length requirement
 
   // --- State Variables ---
   DateTime _selectedDate = DateTime.now(); 
   int? _selectedStartHour; 
   int _hours = 2;
   bool _isLoading = false;
-  bool _isFetchingSlots = false;
-  Set<int> _availableDbSlots = {}; 
-
+  
   // Controllers
   final _notesController = TextEditingController();
   final _addressController = TextEditingController(); 
   final _landmarkController = TextEditingController(); 
-  
-  // Multi-Skill Fields
-  String? _selectedServiceCategory;
-  String? _selectedServiceTask;
-  List<String> _availableCategories = [];
-  List<String> _availableTasks = [];
+  final _rateController = TextEditingController();
 
   Map<String, dynamic>? _userData;
-
+  // Assume all 24 hours are theoretically available for a general request
+  Set<int> _availableGeneralSlots = List.generate(24, (index) => index).toSet(); 
+  
   // --- GPS & TA Variables ---
   Position? _currentPosition;
   String? _nominatimAddress;
@@ -71,58 +54,21 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   @override
   void initState() {
     super.initState();
-    
-    // --- 0. EXTRACT WORKER DATA ---
-    workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
-    workerName = widget.preSelectedWorker['name'] ?? 'Worker';
-    workerPhone = widget.preSelectedWorker['phone'] ?? '';
-    // Safely cast cw_data which holds the nested skill map (Category -> TaskSlug -> TaskDetails)
-    workerCwData = widget.preSelectedWorker['cw_data'] as Map<String, dynamic>? ?? {};
-    hourlyRate = (widget.preSelectedWorker['perHourCharge'] as num?)?.toDouble() ?? 500.0;
-
-
-    final now = DateTime.now();
-    _selectedDate = DateTime(now.year, now.month, now.day);
-    
-    // --- 1. INITIALIZE CATEGORIES ---
-    if (workerCwData.isNotEmpty) {
-      _availableCategories = workerCwData.keys.toList();
-      _selectedServiceCategory = _availableCategories.first;
-      _updateAvailableTasks(_selectedServiceCategory!);
-    } else {
-      // Fallback for workers without detailed cw_data
-      _availableCategories = ['General'];
-      _availableTasks = ['General Task'];
-      _selectedServiceCategory = 'General';
-      _selectedServiceTask = 'General Task';
-    }
-
+    _rateController.text = _defaultHourlyRate.toStringAsFixed(0);
     _fetchUserData();
-    _fetchAvailability();
-    _checkPendingData();
   }
-  
-  void _updateAvailableTasks(String category) {
-    if (workerCwData.containsKey(category)) {
-      setState(() {
-        final tasksMap = workerCwData[category] as Map<String, dynamic>;
-        // Extract the actual task name from the nested map values
-        _availableTasks = tasksMap.values.map((e) => e['name'].toString()).toList();
-        _selectedServiceTask = _availableTasks.isNotEmpty ? _availableTasks.first : null;
-      });
-    }
-  }
-
 
   @override
   void dispose() {
     _notesController.dispose();
     _addressController.dispose();
     _landmarkController.dispose();
+    _rateController.dispose();
     super.dispose();
   }
 
-  // --- 1. Fetch User Data ---
+  // --- Data & Helpers ---
+
   Future<void> _fetchUserData() async {
     if (widget.userId.isEmpty) return;
     try {
@@ -140,104 +86,28 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-  // --- 2. Check Pending Data ---
-  void _checkPendingData() {
-    if (BookingCreationScreen.pendingBookingData != null) {
-      final data = BookingCreationScreen.pendingBookingData!;
-      if (data['workerId'] == workerId) { 
-        setState(() {
-          _selectedDate = data['date'];
-          _selectedStartHour = data['hour'];
-          _hours = data['hours'];
-          _notesController.text = data['notes'];
-          _selectedServiceCategory = data['serviceCategory'];
-          _selectedServiceTask = data['serviceTask'];
-          _addressController.text = data['address'] ?? '';
-          _landmarkController.text = data['landmark'] ?? '';
-          
-          // Re-populate tasks based on restored category
-          if (_selectedServiceCategory != null) {
-            _updateAvailableTasks(_selectedServiceCategory!);
-          }
-        });
-        
-        BookingCreationScreen.pendingBookingData = null;
-
-        if (FirebaseAuth.instance.currentUser != null && widget.userId.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Resuming your booking...'), backgroundColor: Colors.blue)
-            );
-            _confirmBooking(); 
-          });
-        }
-      }
-    }
-  }
-
-  // --- 3. Fetch Worker Availability ---
-  Future<void> _fetchAvailability() async {
-    setState(() { _isFetchingSlots = true; _availableDbSlots.clear(); _selectedStartHour = null; });
-    try {
-      final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final response = await ApiClient.post('/get-worker-availability', {
-        'workerId': workerId, 
-        'date': dateStr,
-      });
-      if (response['ok'] == true) {
-        final List<dynamic> hours = response['availableHours'];
-        if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
-      }
-    } catch (e) {
-      debugPrint("Error fetching availability: $e");
-    } finally {
-      if (mounted) setState(() => _isFetchingSlots = false);
-    }
-  }
-
-  // --- 4. Filter Slots Logic ---
+  // Uses local 24-hour availability to determine valid start slots
   List<int> _getAvailableStartSlots() {
     List<int> slots = [];
     final now = DateTime.now();
-    final minBookingTime = now.add(const Duration(hours: 1));
+    final min_BookingTime = now.add(const Duration(hours: 1));
     
     for (int hour = workingStartHour; hour < workingEndHour; hour++) {
       if (hour + _hours > workingEndHour) continue;
       
       bool isSlotBlockAvailable = true;
       for (int i = 0; i < _hours; i++) {
-        if (!_availableDbSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
+        if (!_availableGeneralSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
       }
       if (!isSlotBlockAvailable) continue;
       
       final slotDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour);
       if (DateUtils.isSameDay(_selectedDate, now)) {
-        if (slotDateTime.isBefore(minBookingTime)) continue;
+        if (slotDateTime.isBefore(min_BookingTime)) continue;
       }
       slots.add(hour);
     }
     return slots;
-  }
-
-  // --- 5. GPS & Reverse Geocoding Logic ---
-  Future<void> _getNominatimAddress(double lat, double lon) async {
-    try {
-      final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
-      );
-      final response = await http.get(url, headers: {
-        'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)' 
-      });
-
-      if (response.statusCode == 200) {
-        final decoded = json.decode(response.body);
-        setState(() {
-          _nominatimAddress = decoded['display_name'];
-        });
-      }
-    } catch (e) {
-      debugPrint("Reverse Geocoding Failed: $e");
-    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -256,10 +126,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         }
       }
       
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions are permanently denied.');
-      }
-
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high
       );
@@ -268,7 +134,17 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         _currentPosition = position;
       });
 
-      await _getNominatimAddress(position.latitude, position.longitude);
+      // Simplified: Directly try to get address, ignore if it fails
+      try {
+         final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&zoom=18&addressdetails=1');
+         final response = await http.get(url, headers: {'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)'});
+         if (response.statusCode == 200) {
+            final decoded = json.decode(response.body);
+            setState(() { _nominatimAddress = decoded['display_name']; });
+         }
+      } catch (e) {
+         debugPrint("Reverse Geocoding Failed: $e");
+      }
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -277,9 +153,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("$e"), backgroundColor: Colors.red)
-        );
+        _showError("$e");
       }
     } finally {
       if (mounted) setState(() => _isGettingLocation = false);
@@ -293,45 +167,31 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     return DateFormat.j().format(dt); 
   }
 
-  // --- 6. Submit Booking (FIXED: Individual Request Flow) ---
+  // --- Submit Booking (Multi-Request Flow) ---
   Future<void> _confirmBooking() async {
     // Validation
-    if (_selectedServiceCategory == null || _selectedServiceTask == null || _selectedStartHour == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select Category, Task, and Time.'), backgroundColor: Colors.orange));
+    if (_selectedStartHour == null) {
+       _showError('Please select a Time slot.');
+      return;
+    }
+    // CRITICAL: Enforce min length for vector search
+    if (_notesController.text.trim().length < _minNotesLength) {
+       _showError('Please describe your job in more detail (min $_minNotesLength characters) for accurate matching.');
       return;
     }
     if (_addressController.text.trim().isEmpty && _currentPosition == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an address or use GPS.'), backgroundColor: Colors.red));
+       _showError('Please enter an address or use GPS.');
       return;
     }
 
-    // Auth Check
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      // CRITICAL: Persist all necessary worker details in the static field
-      BookingCreationScreen.pendingBookingData = {
-        'workerId': workerId, 
-        'workerName': workerName, 
-        'workerPhone': workerPhone,
-        'hourlyRate': hourlyRate, // Save the scalar
-        'cw_data': workerCwData, // Save the complex map
-        'serviceCategory': _selectedServiceCategory,
-        'serviceTask': _selectedServiceTask,
-        'date': _selectedDate, 
-        'hour': _selectedStartHour,
-        'hours': _hours, 
-        'notes': _notesController.text, 
-        'address': _addressController.text, 
-        'landmark': _landmarkController.text
-      };
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-      if (FirebaseAuth.instance.currentUser != null && mounted) Navigator.of(context).pop(); 
+      _showError('Please login to submit a job request.');
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      // Fetch user data if missed
       if (_userData == null && widget.userId.isNotEmpty) {
           final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
           if (userDoc.exists) _userData = userDoc.data();
@@ -339,19 +199,20 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       
       final userName = _userData?['name'] ?? 'Anonymous User';
       final userPhone = _userData?['phone'] ?? '';
-      
-      final calculatedWage = (hourlyRate * _hours).toInt();
+      final currentHourlyRate = double.tryParse(_rateController.text) ?? _defaultHourlyRate;
+      final calculatedWage = (currentHourlyRate * _hours).toInt();
+      final jobDescription = _notesController.text.trim();
 
       // --- PAYLOAD CONSTRUCTION ---
       final bookingPayload = {
         'userId': currentUser.uid,
         'userPhone': userPhone,
         'userName': userName, 
-        // CRITICAL FIX: Send only the selected worker's ID. 
-        'candidateWorkers': [workerId], 
+        
+        // CRITICAL: Empty candidateWorkers list triggers backend's smart matching
+        'candidateWorkers': [], 
 
         'userInfo': {'name': userName, 'phone': userPhone, 'email': _userData?['email'] ?? ''},
-        'workerInfo': {'name': workerName, 'phone': workerPhone},
 
         'date': DateFormat('yyyy-MM-dd').format(_selectedDate), 
         'startHour': _selectedStartHour!,
@@ -359,8 +220,10 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         'wage': calculatedWage,
         'ta': _baseTA, 
         
-        'serviceCategory': _selectedServiceCategory,
-        'serviceType': _selectedServiceTask, // Canonical Work is used here
+        // CRITICAL: Send the full text as both serviceType (for matching) and notes
+        // serviceCategory is intentionally generic or omitted as the backend will derive it from the text.
+        'serviceType': jobDescription, 
+        'serviceCategory': "General", 
         
         'location': {
           'locality': _userData?['locality'] ?? 'Unknown',
@@ -371,64 +234,81 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           'lng': _currentPosition?.longitude,
           'source': _currentPosition != null ? 'gps' : 'manual',
         },
-        'notes': _notesController.text.trim(),
+        'notes': jobDescription,
       };
 
-      // Use /create-booking endpoint (single-request flow to selected worker)
+      // Use /create-booking endpoint (multi-request flow)
       final response = await ApiClient.post('/create-booking', bookingPayload);
       
       if (response['ok'] == true) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request Sent to $workerName!'), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request Sent to Top ${response['matched']} Matches!'), backgroundColor: Colors.green));
         Navigator.of(context).pop();
       } else {
         throw Exception(response['error'] ?? 'Failed');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
+        _showError('Error: $e');
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  void _showError(String message) {
+     if (!mounted) return;
+     ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red)
+     );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+              padding: const EdgeInsets.only(bottom: 8, top: 4),
+              child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
+            );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final availableSlots = _getAvailableStartSlots();
 
     return Scaffold(
-      appBar: AppBar(title: Text('Book $workerName')),
+      appBar: AppBar(title: const Text('New General Job Request')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- Service Category & Task (Updated Dropdowns) ---
-            _buildSectionTitle('Service Details'),
+            // --- Job Description (used for vector match) ---
+            _buildSectionTitle('Detailed Job Description'),
             
-            // Category Dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedServiceCategory,
-              items: _availableCategories.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) {
-                setState(() => _selectedServiceCategory = v);
-                if (v != null) _updateAvailableTasks(v);
-              },
-              decoration: const InputDecoration(labelText: "Service Category", border: OutlineInputBorder()),
+            // Job Description (used for vector match)
+            TextField(
+              controller: _notesController,
+              decoration: InputDecoration(
+                hintText: 'Describe your issue (e.g., "My kitchen tap is leaking and needs a new washer.").',
+                labelText: 'Job Description (Min ${_minNotesLength} chars)',
+                prefixIcon: const Icon(Icons.description),
+                border: const OutlineInputBorder()
+              ),
+              maxLines: 4,
             ),
-            const SizedBox(height: 16),
-            
-            // Task Dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedServiceTask,
-              items: _availableTasks.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setState(() => _selectedServiceTask = v),
-              decoration: const InputDecoration(labelText: "Specific Task", border: OutlineInputBorder()),
+            const SizedBox(height: 20),
+
+            // --- Estimated Rate (Informational/Placeholder) ---
+            _buildSectionTitle('Estimated Hourly Rate (for wage calculation)'),
+            TextFormField(
+              controller: _rateController, 
+              keyboardType: TextInputType.number, 
+              decoration: const InputDecoration(labelText: "Hourly Rate (₹)", border: OutlineInputBorder()),
+              validator: (v) => (double.tryParse(v ?? '0') ?? 0) < 50 ? "Min ₹50" : null,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             
-            // --- Location Section (rest of file remains the same) ---
+            // --- Location Section ---
             _buildSectionTitle('Location & Contact'),
             Row(
               children: [
@@ -499,7 +379,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 );
                 if (picked != null) {
                   setState(() => _selectedDate = picked);
-                  _fetchAvailability();
+                  // No availability fetch needed for general request
                 }
               },
               child: InputDecorator(
@@ -543,21 +423,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
 
             // --- Slots ---
             const SizedBox(height: 10),
-            if (_isFetchingSlots) 
-              const Center(child: LinearProgressIndicator())
-            else if (availableSlots.isEmpty)
-               Container(
-                 padding: const EdgeInsets.all(10),
-                 decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8)),
-                 child: const Row(
-                   children: [
-                     Icon(Icons.error_outline, color: Colors.red),
-                     SizedBox(width: 10),
-                     Expanded(child: Text("No slots available for this date/duration.", style: TextStyle(color: Colors.red))),
-                   ],
-                 ),
-               )
-            else
+             // Slot selection logic remains, but it relies on _availableGeneralSlots (all 24 hours)
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -572,38 +438,12 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                   );
                 }).toList(),
               ),
-
-            // --- Notes ---
-            const SizedBox(height: 20),
-            _buildSectionTitle('Additional Notes'),
-            TextField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                hintText: 'Describe the issue or special requests...',
-                border: OutlineInputBorder()
-              ),
-              maxLines: 3,
-            ),
             
-            // --- Footer (Wage & TA) ---
-            const SizedBox(height: 20),
-            const Divider(thickness: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                   Text("Travel Allowance (Base):", style: TextStyle(color: Colors.grey[700])),
-                   Text("₹$_baseTA", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 10),
+            // --- Footer (Button) ---
+            const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                // Button text updated to reflect single request intent
                 onPressed: _isLoading ? null : _confirmBooking,
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
@@ -612,19 +452,12 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                 ),
                 child: _isLoading 
                   ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
-                  : Text('Send Request to $workerName', style: const TextStyle(fontSize: 18)),
+                  : const Text('Send Job Request to Top Matches', style: TextStyle(fontSize: 18)),
               ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-              padding: const EdgeInsets.only(bottom: 8, top: 4),
-              child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
-            );
   }
 }

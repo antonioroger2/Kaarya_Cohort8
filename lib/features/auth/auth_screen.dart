@@ -9,7 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 // NEW IMPORT: Required for the multi-step worker flow
-import '../auth/worker_onboard_screen.dart'; 
+import 'worker_onboarding_screen.dart'; 
 
 const String API_BASE_URL = "https://hawk4aynahtirk.pythonanywhere.com"; 
 const String API_SECRET = "HiFhGDorJRULc1Z"; 

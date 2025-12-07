@@ -9,7 +9,8 @@ import 'worker_card.dart';
 import '../shared/profile_screen.dart';
 import '../auth/auth_screen.dart';
 import 'bookings_screen.dart';
-import 'booking_creation_screen.dart'; // Import for pendingBookingData
+import 'booking_creation_screen.dart'; 
+import 'general_booking_screen.dart'; // NEW IMPORT
 
 class HomeScreen extends StatefulWidget {
   final String userId;
@@ -54,25 +55,25 @@ class _HomeScreenState extends State<HomeScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final data = BookingCreationScreen.pendingBookingData!;
           
-          // CRITICAL FIX: Reconstruct the full worker map needed by the new constructor
           final Map<String, dynamic> workerMap = {
             'uid': data['workerId'],
             'name': data['workerName'],
             'phone': data['workerPhone'],
-            'cw_data': data['workerCwData'], // Use the new data field
-            'perHourCharge': data['hourlyRate'], // Assuming you saved this scalar
-            // Add other necessary fields if they were stored in pendingBookingData
+            'cw_data': data['cw_data'], 
+            'perHourCharge': data['hourlyRate'], 
           };
 
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => BookingCreationScreen(
-                userId: widget.userId, // Now we have the logged-in ID
-                preSelectedWorker: workerMap, // Pass the single map argument
-              ),
-            ),
-          );
-          // Clear pending data immediately after using it
+          if (workerMap['uid'] != null && workerMap['cw_data'] != null) {
+             Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => BookingCreationScreen(
+                    userId: widget.userId, 
+                    preSelectedWorker: workerMap, 
+                  ),
+                ),
+              );
+          }
+          
           BookingCreationScreen.pendingBookingData = null; 
         });
       }
@@ -172,6 +173,21 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _isRefreshing = false);
   }
 
+  // --- NEW: General Request Button Handler ---
+  void _startGeneralRequest(BuildContext context) {
+    if (_isGuest) {
+      // For guest users, enforce login first
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
+    } else {
+      // For logged-in users, launch the general request screen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => GeneralBookingScreen(userId: widget.userId),
+        ),
+      );
+    }
+  }
+
   String _normalize(dynamic input) {
     if (input == null) return '';
     return input.toString().trim().replaceAll(RegExp(r'\s+'), '');
@@ -187,7 +203,7 @@ class _HomeScreenState extends State<HomeScreen> {
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 15),
           prefixIcon: const Icon(Icons.search, color: Colors.grey, size: 22),
-          hintText: isCompact ? 'Search...' : 'Search services...',
+          hintText: isCompact ? 'Filter workers by skill...' : 'Filter workers by skill...',
           hintStyle: TextStyle(color: Colors.grey[500], fontSize: 14),
           filled: true,
           fillColor: Colors.grey[100],
@@ -354,6 +370,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
+      // NEW: Floating Action Button for General Request
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _startGeneralRequest(context),
+        label: const Text("Post a Job"),
+        icon: const Icon(Icons.handyman),
+        backgroundColor: Colors.orange,
+        foregroundColor: Colors.white,
+      ),
       body: RefreshIndicator(
         onRefresh: _onRefresh,
         child: CustomScrollView(
@@ -397,6 +421,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemCount: _categories.length,
                       separatorBuilder: (_, __) => const SizedBox(width: 12),
                       itemBuilder: (context, index) => _buildCategoryItem(_categories[index]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            
+            // NEW: Prompt for General Request above the list
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Card(
+                  color: Colors.blue.shade50,
+                  elevation: 0,
+                  child: ListTile(
+                    leading: const Icon(Icons.lightbulb_outline, color: Colors.blue),
+                    title: const Text("Need quick help from the best available professional?"),
+                    subtitle: const Text("Tap 'Post a Job' below to describe your issue and send your request to the top 5 matches instantly!"),
+                    trailing: ElevatedButton(
+                      onPressed: () => _startGeneralRequest(context),
+                      child: const Text("Post Job"),
                     ),
                   ),
                 ),

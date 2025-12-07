@@ -5,7 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'features/auth/auth_wrapper.dart';
 import 'features/user/user_dashboard.dart'; // Using UserDashboard as it's the wrapper
 import 'features/worker/worker_dashboard.dart';
-import 'features/auth/worker_onboard_screen.dart'; // Assuming this name
+import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

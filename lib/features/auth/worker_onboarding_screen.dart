@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // Needed for input formatters
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -25,8 +26,11 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
 
   static const String baseUrl = "https://hawk4aynahtirk.pythonanywhere.com"; 
   static const String secretKey = "HiFhGDorJRULc1Z"; 
+  
+  // --- Validation Constants ---
+  static const int minDescriptionWords = 60; 
 
-  // --- Controllers ---
+  // --- Controllers & Keys ---
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _pinController = TextEditingController();
@@ -55,6 +59,8 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
       _rateController.text = widget.baseSignupData!['hourlyRate']?.toString() ?? '300';
       _passwordController.text = widget.baseSignupData!['password'] ?? '';
     }
+     // Listener for word count in step 2
+    _descController.addListener(_updateWordCount);
   }
 
   @override
@@ -63,9 +69,37 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
     _pinController.dispose();
     _localityController.dispose();
     _rateController.dispose();
+    _descController.removeListener(_updateWordCount);
     _descController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  // --- Helper Methods ---
+
+  void _updateWordCount() {
+    final text = _descController.text;
+    // Simple word count: split by spaces, filter empty strings
+    final words = text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
+    // Force rebuild to update word counter text
+    setState(() {
+      // Intentionally empty setState to trigger rebuild for counter visibility
+    });
+  }
+
+  int get _currentWordCount {
+    final text = _descController.text;
+    return text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length;
+  }
+
+  String? _validateDescription(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Professional summary is required.';
+    }
+    if (_currentWordCount < minDescriptionWords) {
+      return 'Minimum $minDescriptionWords words required. (Current: $_currentWordCount)';
+    }
+    return null;
   }
 
   void _showError(String message) {
@@ -75,10 +109,10 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
     );
   }
 
-  // --- API: Predict Skills (Step 2 to Step 3) ---
+  // --- API: Predict Skills (Step 1 to Step 2) ---
   Future<void> _analyzeProfile() async {
-    if (_descController.text.trim().length < 5) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please describe your work in more detail."), backgroundColor: Colors.orange));
+    if (!_formKey.currentState!.validate() || _validateDescription(_descController.text) != null) {
+       _showError("Please correct the highlighted fields and meet the 60-word minimum.");
        return;
     }
     
@@ -95,23 +129,28 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
         final data = jsonDecode(response.body);
         final List<dynamic> rawList = data['predictions'] ?? [];
         
-        setState(() {
-          _detectedSkills = List<Map<String, dynamic>>.from(rawList);
+        // --- Data Mapping and Initialization ---
+        _detectedSkills.clear();
+        _selectedToolsMap.clear();
+
+        for (var rawSkill in rawList) {
+          final skill = Map<String, dynamic>.from(rawSkill);
+          String cwId = skill['cw_id'];
+          // Ensure suggestedTools is treated as List<String>
+          List<String> tools = List<String>.from(skill['suggestedTools'] ?? []); 
           
-          _selectedToolsMap.clear();
-          for (var skill in _detectedSkills) {
-            String cwId = skill['cw_id'];
-            // Use suggestedTools from the global CW registry (more standardized)
-            List<dynamic> tools = skill['suggestedTools'] ?? []; 
-            _selectedToolsMap[cwId] = tools.map((e) => e.toString()).toSet();
-          }
-          
-          if (_detectedSkills.isNotEmpty) {
+          _detectedSkills.add(skill);
+          // Initialize selected tools with suggested tools for convenience
+          _selectedToolsMap[cwId] = tools.toSet();
+        }
+        
+        if (_detectedSkills.isNotEmpty) {
+           setState(() {
              _currentStep = 2; // Go to Verification if skills are found
-          } else {
-             throw Exception("AI found no distinct skills. Try describing your job more clearly.");
-          }
-        });
+           });
+        } else {
+           throw Exception("AI found no distinct skills. Try describing your job more clearly.");
+        }
       } else {
         final errorBody = jsonDecode(response.body);
         throw Exception(errorBody['error'] ?? response.reasonPhrase);
@@ -123,25 +162,20 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
     }
   }
 
-  // --- API: Complete Signup (Step 3 Finish) ---
+  // --- API: Complete Signup (Step 2 Finish) ---
   Future<void> _completeSignup() async {
     if (_detectedSkills.isEmpty) {
-      _showError("Please analyze your profile first.");
+      _showError("Profile analysis failed. Please go back and re-analyze your description.");
       return;
     }
     
+    // Check if at least one tool is selected for the ENTIRE profile
     bool hasTools = _selectedToolsMap.values.any((set) => set.isNotEmpty);
     if (!hasTools) {
-       _showError("Please select at least one tool you own for one skill.");
+       _showError("You must select at least one tool you own across all your skills.");
        return;
     }
     
-    if (!_formKey.currentState!.validate()) {
-       _showError("Please check all fields in Step 1.");
-       return;
-    }
-
-
     setState(() => _isLoading = true);
 
     // Prepare the structured data for the backend
@@ -152,7 +186,6 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
       finalSkillsPayload.add({
         "category": skill['category'],
         "task": skill['task'],
-        // Send the list of selected, canonical tools back
         "myTools": _selectedToolsMap[cwId]?.toList() ?? [], 
       });
     }
@@ -170,24 +203,27 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
           "hourlyRate": int.tryParse(_rateController.text) ?? 300,
           "isWorker": true,
           "profileDescription": _descController.text.trim(), 
-          // New structured field
           "verifiedSkills": finalSkillsPayload 
         }),
       ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         if (!mounted) return;
-        // The backend creates the user, we must sign them in now.
+        
+        // 1. Sign in the newly created user
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: '${widget.phoneNumber}@kaaryaconnect.app',
           password: _passwordController.text,
         );
         
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Signup complete!"), backgroundColor: Colors.green));
-        // Navigate to the main dashboard (AuthWrapper handles the final redirect)
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Signup complete! Welcome!"), backgroundColor: Colors.green));
+        
+        // 2. Navigate away
         Navigator.of(context).popUntil((route) => route.isFirst);
-        Navigator.of(context).pushReplacementNamed('/');
+        // Assuming your main app handles redirection based on Auth state.
+        // If not, use pushReplacementNamed:
+        // Navigator.of(context).pushReplacementNamed('/home'); 
       } else {
         final errorBody = jsonDecode(response.body);
         throw Exception(errorBody['error'] ?? 'Signup failed');
@@ -202,13 +238,17 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
   // --- UI Components: Step Builders ---
 
   Widget _buildStep1BasicInfo() {
-    // Basic profile inputs
+    // Incorporates Step 1 (Basic Info) and Step 2 (Description/Analysis Trigger)
+    
+    int wordCount = _currentWordCount;
+    final wordCountColor = wordCount >= minDescriptionWords ? Colors.green.shade700 : Colors.red.shade700;
+
     return Form(
       key: _formKey,
       child: ListView( 
         padding: const EdgeInsets.only(top: 10),
         children: [
-          const Text("1. Basic Profile Details", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const Text("1. Basic Profile & Rate", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           const SizedBox(height: 15),
           TextFormField(
             controller: _nameController, 
@@ -227,6 +267,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
             Expanded(child: TextFormField(
               controller: _pinController, 
               keyboardType: TextInputType.number, 
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               maxLength: 6,
               decoration: const InputDecoration(labelText: "Pincode", counterText: "", border: OutlineInputBorder()),
               validator: (v) => v!.length != 6 ? "6 digits required" : null,
@@ -242,80 +283,76 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
           TextFormField(
             controller: _rateController, 
             keyboardType: TextInputType.number, 
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(labelText: "Hourly Rate (₹)", border: OutlineInputBorder()),
             validator: (v) => (int.tryParse(v ?? '0') ?? 0) < 50 ? "Min ₹50" : null,
           ),
+          const SizedBox(height: 30),
+
+          // --- Description Section (Professional Requirement) ---
+          const Text("2. Professional Summary *", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 10),
+            child: Text("Describe your services in detail (experience, specialty, quality commitment) for accurate job matching. Example: 'I am a highly skilled plumber with 10 years experience focusing on tap repair and water heater installation. My commitment is to ensure quick, clean, and reliable service every time.'"),
+          ),
+          TextFormField(
+            controller: _descController,
+            maxLines: 5,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(), 
+              hintText: "Enter your professional summary...",
+              errorMaxLines: 2,
+            ),
+            // Use local validation method
+            validator: _validateDescription, 
+          ),
+          const SizedBox(height: 8),
+          // Word Count Indicator
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              'Words: $wordCount / $minDescriptionWords minimum',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: wordCountColor,
+              ),
+            ),
+          ),
           const SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () {
-              if (_formKey.currentState!.validate()) {
-                setState(() => _currentStep = 1);
-              }
-            }, 
-            child: const Text("Next: Describe Your Skills")
-          )
+          ElevatedButton.icon(
+            onPressed: _isLoading ? null : _analyzeProfile,
+            icon: _isLoading 
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.auto_awesome),
+            label: Text(_isLoading ? "Analyzing Profile..." : "Analyze & Verify Skills"),
+            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildStep2Interview() {
-    // AI analysis prompt
-    return ListView(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text("2. Describe Your Skills", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            TextButton(
-              onPressed: () => setState(() => _currentStep = 0),
-              child: const Text("Edit Step 1"),
-            )
-          ],
-        ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Text("Tell us exactly what services you offer. The more detailed you are, the better our AI can categorize you. (e.g., 'I am a plumber who fixes taps and flushes, and an electrician who installs fans and repairs faulty wiring.')"),
-        ),
-        TextFormField(
-          controller: _descController,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(), 
-            hintText: "Describe your work here...",
-          ),
-        ),
-        const SizedBox(height: 20),
-        ElevatedButton.icon(
-          icon: _isLoading 
-            ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : const Icon(Icons.auto_awesome),
-          label: Text(_isLoading ? "Analyzing..." : "Analyze Profile"),
-          onPressed: _isLoading ? null : _analyzeProfile,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStep3Verification() {
-    // Skill and tool selection
+  Widget _buildStep2Verification() {
+    // Skill and tool selection (renamed to Step 2)
     return Column(
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text("3. Verify Skills & Tools", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+            const Text("2. Verify Detected Skills & Tools", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
             TextButton(
-              onPressed: () => setState(() => _currentStep = 1),
-              child: const Text("Edit Step 2"),
+              onPressed: () => setState(() => _currentStep = 0),
+              child: const Text("Edit Description"),
             )
           ],
         ),
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 10),
-          child: Text("Confirm the detected tasks and select ONLY the tools you physically own for each job. This ensures you get accurate bookings."),
+          child: Text("✅ AI detected the following service categories. Confirm they are correct and select ONLY the tools you physically own for each job."),
         ),
         Expanded(
+          // Ensure ListView is correctly constrained by Expanded
           child: ListView.builder(
             itemCount: _detectedSkills.length,
             itemBuilder: (context, index) {
@@ -328,7 +365,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
                 elevation: 3,
                 child: ExpansionTile(
                   initiallyExpanded: index == 0, 
-                  leading: CircleAvatar(child: Icon(_getIconForCategory(skill['category']))),
+                  leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(_getIconForCategory(skill['category']), color: Colors.blue)),
                   title: Text(skill['task'], style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(skill['category']),
                   children: [
@@ -337,20 +374,21 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Select Tools you own:", style: TextStyle(fontWeight: FontWeight.bold)),
+                          const Text("Select Tools YOU OWN:", style: TextStyle(fontWeight: FontWeight.bold)),
                           const SizedBox(height: 8),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: tools.map((tool) {
+                              // Ensure the key exists before checking/updating
                               if (!_selectedToolsMap.containsKey(cwId)) {
-                                _selectedToolsMap[cwId] = {};
+                                _selectedToolsMap[cwId] = <String>{};
                               }
                               final isSelected = _selectedToolsMap[cwId]!.contains(tool);
                               return FilterChip(
                                 label: Text(tool),
                                 selected: isSelected,
-                                selectedColor: Colors.green.shade100,
+                                selectedColor: Colors.lightGreen.shade200,
                                 labelStyle: TextStyle(color: isSelected ? Colors.green.shade900 : Colors.black87),
                                 onSelected: (val) {
                                   setState(() {
@@ -376,9 +414,10 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
         const SizedBox(height: 10),
         ElevatedButton(
           onPressed: _isLoading ? null : _completeSignup,
-          style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-          child: Text(_isLoading ? "Saving..." : "Confirm & Finish Signup"),
+          style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.green),
+          child: Text(_isLoading ? "Completing Setup..." : "Confirm & Finish Signup"),
         ),
+        const SizedBox(height: 10),
       ],
     );
   }
@@ -399,17 +438,24 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Worker Signup")),
+      appBar: AppBar(title: const Text("Worker Profile Setup")),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: IndexedStack( 
-          index: _currentStep,
+        // Use a Column/IndexedStack structure that allows Expanded to work correctly
+        child: Column(
           children: [
-            _buildStep1BasicInfo(),
-            _buildStep2Interview(),
-            // Only build step 3 when data is ready
-            if (_currentStep == 2) _buildStep3Verification(),
-          ].whereType<Widget>().toList(), 
+            if (_currentStep == 0) Expanded(child: _buildStep1BasicInfo()),
+            if (_currentStep == 2) Expanded(child: _buildStep2Verification()),
+            
+            // Handle the case when Step 2 analysis fails (no skills detected)
+            if (_currentStep == 1) ...[
+              const Text("Analysis failed, returning to step 1...", style: TextStyle(color: Colors.red)),
+              ElevatedButton(
+                onPressed: () => setState(() => _currentStep = 0),
+                child: const Text("Go Back"),
+              )
+            ]
+          ],
         )
       ),
     );

@@ -5,6 +5,7 @@ import uuid
 import json
 import requests
 import re
+import time   
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import Flask, request, jsonify
@@ -12,34 +13,46 @@ from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 from firebase_admin.firestore import transactional
+from google.cloud.firestore import FieldFilter
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- CONFIGURATION ---
+  
 API_SECRET = os.environ.get("OTP_API_SECRET", "HiFhGDorJRULc1Z")
 FIREBASE_CRED = "firebase-service-account-key.json"
 MISSED_CALL_NO = os.environ.get("MISSED_CALL_NO", "1234567890")
 EMAIL_SUFFIX = "@kaaryaconnect.app"
 
-# AI & Vector Config
-HF_API_KEY = os.environ.get("HF_API_KEY", "")
+  
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", os.environ.get("HF_API_KEY", ""))
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "")
-PINECONE_HOST = os.environ.get("PINECONE_HOST", "https://llama-text-embed-v2-index-0s8x0bx.svc.aped-4627-b74a.pinecone.io")
-# FIX 1: Explicitly define EMBEDDING_DIMENSION for vector operations
 EMBEDDING_DIMENSION = 1024
+PINECONE_MODEL = "llama-text-embed-v2"
 
-# Business Logic Constants
+  
+GROQ_LLM_URL = "https://api.groq.com/openai/v1/chat/completions"
+GROQ_MODEL = "llama-3.1-8b-instant"
+MAX_LLM_RETRIES = 2   
+
+  
+PINECONE_INDEX_HOST = os.environ.get("PINECONE_INDEX_HOST", "https://llama-text-embed-v2-index-cxjha2i.svc.aped-4627-b74a.pinecone.io")
+PINECONE_EMBED_URL = "https://api.pinecone.io/embed"
+
+  
 HOUR_OFFSET = 0
 SLOT_COUNT = 24
 FULL_MASK = (1 << SLOT_COUNT) - 1
 
-# Headers for External APIs
-headers_llm = {"Authorization": f"Bearer {HF_API_KEY}", "Content-Type": "application/json"}
-headers_pinecone = {"Api-Key": PINECONE_API_KEY, "Content-Type": "application/json"}
-HF_LLM_URL = "https://router.huggingface.co/v1/chat/completions"
+  
+headers_llm = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+headers_pinecone = {
+    "Api-Key": PINECONE_API_KEY,
+    "Content-Type": "application/json",
+    "X-Pinecone-Api-Version": "2025-10"
+}
 
-# --- INIT FIREBASE ---
+  
 if not firebase_admin._apps:
     try:
         cred = credentials.Certificate(FIREBASE_CRED)
@@ -51,7 +64,7 @@ db = firestore.client()
 app = Flask(__name__)
 CORS(app)
 
-# --- DB COLLECTION NAMES ---
+  
 COL_USERS = "users"
 COL_WORKERS = "workers"
 COL_BOOKINGS = "bookings"
@@ -60,8 +73,9 @@ COL_TOOLS = "tools"
 COL_OTP = "otp"
 COL_VERIFIED = "verified_signups"
 COL_HISTORY = "raw_to_canonical_history"
+COL_CATEGORIES = "main_categories"
 
-# --- SMS TEMPLATES ---
+  
 T_JOB_ALERT = ("[{role}] JOB ALERT: Service requested at {locality} on {date}. "
              "Time: {from_time} to {to_time} (approx. {hours} hours) at ₹{wage}. "
              "Notes: {details}. To accept, reply 'ACCEPT' or use the app. Missed call: {missed_call_no} ~ Kaarya")
@@ -72,7 +86,7 @@ T_START_OTP = ("JOB START OTP: Your code for the {locality} job on {date} ({from
 T_END_OTP = ("JOB END OTP: Your completion code for the {locality} job on {date} is {otp}. "
               "Elapsed Time: {hours} hours (Final Wage: ₹{wage}). SHARE WITH CUSTOMER to confirm payment received.")
 
-# --- HELPER FUNCTIONS: CORE ---
+  
 def require_secret(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -114,36 +128,69 @@ def slugify(text):
     text = re.sub(r'\s+', '_', text)
     return text.strip('_')
 
-# --- HELPER FUNCTIONS: AI & VECTOR ---
+  
+
 def run_llm(prompt, max_new_tokens=200):
-    if not HF_API_KEY: return "LLM_DISABLED"
+    if not GROQ_API_KEY: return "LLM_DISABLED"
+
     payload = {
-        "model": "mistralai/Mistral-7B-Instruct-v0.2:featherless-ai",
+        "model": GROQ_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False, "max_tokens": max_new_tokens, "temperature": 0.3
     }
-    try:
-        r = requests.post(HF_LLM_URL, headers=headers_llm, json=payload)
-        if r.status_code != 200:
-            print(f"LLM API Error: {r.status_code} {r.text}")
+
+    for attempt in range(MAX_LLM_RETRIES + 1):
+        try:
+            r = requests.post(GROQ_LLM_URL, headers=headers_llm, json=payload, timeout=90)
+
+            if r.status_code == 429:   
+                delay = 3 * (attempt + 1)
+                print(f"Groq LLM API Rate Limit (429). Retrying in {delay}s...")
+                time.sleep(delay)
+                continue
+
+            if r.status_code != 200:
+                print(f"Groq LLM API HTTP Error: {r.status_code}. Body: {r.text[:100]}")
+                return "LLM_ERROR"
+
+            return r.json()["choices"][0]["message"]["content"].strip()
+
+        except requests.exceptions.Timeout:
+            print("Groq LLM API Timeout.")
             return "LLM_ERROR"
-        return r.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        print(f"LLM Error: {e}")
-        return "LLM_ERROR"
+        except Exception as e:
+            print(f"Groq LLM Connection Error: {e}")
+            return "LLM_ERROR"
+
+    print("Groq LLM API failed after max retries.")
+    return "LLM_ERROR"
+
 
 def pinecone_embed_text(text):
     if not PINECONE_API_KEY: return [0.0] * EMBEDDING_DIMENSION
-    url = f"{PINECONE_HOST}/embed"
+
+    url = PINECONE_EMBED_URL
+    embed_headers = {
+        "Api-Key": PINECONE_API_KEY,
+        "Content-Type": "application/json",
+        "X-Pinecone-Api-Version": "2025-10"
+    }
+
     payload = {
-        "model": "llama-text-embed-v2",
+        "model": PINECONE_MODEL,
+        "parameters": {
+          "input_type": "passage",
+          "truncate": "END"
+        },
         "inputs": [{"text": text}]
     }
+
     try:
-        r = requests.post(url, headers=headers_pinecone, json=payload)
+        r = requests.post(url, headers=embed_headers, json=payload, timeout=90)
         if r.status_code != 200:
-            print(f"Pinecone embed error: {r.status_code} {r.text}")
+            print(f"Pinecone embed error (Inference API): {r.status_code} {r.text[:100]}")
             return [0.0] * EMBEDDING_DIMENSION
+
         data = r.json()
         embeddings = data.get("data", [])
         if embeddings and len(embeddings) > 0:
@@ -155,7 +202,7 @@ def pinecone_embed_text(text):
 
 def pinecone_upsert(vector_id, embedding, metadata):
     if not PINECONE_API_KEY: return True
-    url = f"{PINECONE_HOST}/vectors/upsert"
+    url = f"{PINECONE_INDEX_HOST}/vectors/upsert"
     payload = {
         "vectors": [{
             "id": vector_id,
@@ -164,14 +211,14 @@ def pinecone_upsert(vector_id, embedding, metadata):
         }]
     }
     try:
-        r = requests.post(url, headers=headers_pinecone, json=payload)
+        r = requests.post(url, headers=headers_pinecone, json=payload, timeout=90)
         return r.status_code < 400
     except:
         return False
 
 def pinecone_query(embedding, top_k=5, filter_dict=None):
     if not PINECONE_API_KEY: return []
-    url = f"{PINECONE_HOST}/query"
+    url = f"{PINECONE_INDEX_HOST}/query"
     payload = {
         "vector": embedding,
         "topK": top_k,
@@ -180,7 +227,7 @@ def pinecone_query(embedding, top_k=5, filter_dict=None):
     if filter_dict:
         payload["filter"] = filter_dict
     try:
-        r = requests.post(url, headers=headers_pinecone, json=payload)
+        r = requests.post(url, headers=headers_pinecone, json=payload, timeout=90)
         if r.status_code >= 400: return []
         matches = r.json().get("matches", [])
         return [{
@@ -191,216 +238,329 @@ def pinecone_query(embedding, top_k=5, filter_dict=None):
     except:
         return []
 
-# NEW: LLM Select for Vector Matches
+  
+
 def llm_select_best_match(user_input, candidates):
-    """
-    Asks LLM to strictly pick the best CW ID from vector search results.
-    Returns the ID of the selected candidate, or 'NONE' if no good match.
-    """
     candidates_str = ""
     for idx, c in enumerate(candidates):
         meta = c.get('metadata', {})
-        candidates_str += f"{idx+1}. ID: {c.get('id')} | Name: {meta.get('canonicalWork', 'Unknown')} | Category: {meta.get('category', 'Unknown')}\n"
+        name = meta.get('canonicalWork', meta.get('name', 'Unknown'))
+        category = meta.get('category', 'N/A')
+
+        candidates_str += f"{idx+1}. ID: {c.get('id')} | Name: {name} | Category: {category}\n"
+
     prompt = f"""User Request: "{user_input}"
-Available Job Types (from database):
+Available Entities (from database):
 {candidates_str}
-Task: Identify which Job Type ID best matches the user request.
-- If one matches well, return ONLY that ID.
+Task: Identify which entity index best matches the user request.
+- If one matches well, return ONLY the 1-based index number (e.g., '1', '2', or '3').
 - If none match well, return "NONE".
-Answer (ID only):"""
-    result = run_llm(prompt, max_new_tokens=20)
-    # Clean and normalize the ID result
-    result = result.strip().replace("ID:", "").strip()
-    # Check if result is one of the candidate IDs
-    valid_ids = [c.get('id') for c in candidates]
-    if result in valid_ids:
-        return result
+Answer (Index ONLY):"""
+
+    result = run_llm(prompt, max_new_tokens=5)
+    result = result.strip().upper()
+
+    if result in ("NONE", "LLM_ERROR", "LLM_DISABLED"):   
+        return None
+
+    try:
+        index = int(result)
+        if 1 <= index <= len(candidates):
+            return candidates[index - 1].get('id')
+    except:
+        pass
+
     return None
 
-def llm_generate_canonical_work(user_input, category="General"):
-    # FIX 4: Corrected implementation to prompt LLM for both category and task
-    prompt = f"""User description: "{user_input}"
-Analyze the request.
-1. Determine the best, single, broad Category (e.g., Plumber, Electrician...).
-2. Create a clean, short, standardized Canonical Work name (3 words max) for the specific task.
-Return a valid JSON object with ONLY two keys: `category` and `task`.
-Example: {{"category": "Plumber", "task": "Tap Repair"}}"""
-    response = run_llm(prompt, max_new_tokens=64)
+def llm_generate_new_entity(user_input, entity_type, existing_context=""):
+    if entity_type == "cw":
+        prompt = f"""User request: "{user_input}"
+Existing context: {existing_context}
+Task: Define a new standard Job/Task. Focus on broad, standard categories and tasks.
+1. 'category': Standard, broad Category (e.g., Plumber, Electrician).
+2. 'name': Max 2 words (e.g., 'Tap Repair', 'Fan Install').
+3. 'description': Max 30 words.
+Return JSON: {{"category": "...", "name": "...", "description": "..."}}"""
+        max_tokens = 75
+
+    elif entity_type == "tool":
+        prompt = f"""User input for tool: "{user_input}"
+Task: Normalize this input to a single, macro-level tool name. (e.g., 'Phillips screwdriver', 'flathead' -> 'Screwdriver Set').
+1. 'name': Standard, MACRO-LEVEL canonical tool name (e.g., 'Screwdriver Set').
+2. 'description': Brief description of the tool's general purpose (MAX 10 words).
+Return JSON: {{"name": "...", "description": "..."}}"""
+        max_tokens = 50
+
+    elif entity_type == "category":
+        prompt = f"""User input: "{user_input}"
+Task: Define a new Main Category.
+1. 'name': Standard, broad Category name (e.g., Plumbing, Electrical).
+2. 'description': Brief description of the category's scope (Max 30 words).
+Return JSON: {{"name": "...", "description": "..."}}"""
+        max_tokens = 50
+
+    else:
+        raise ValueError("Invalid entity_type for generation.")
+
+    response = run_llm(prompt, max_new_tokens=max_tokens)
+
+    if response in ("LLM_DISABLED", "LLM_ERROR"):
+        return (None, None, None) if entity_type == "cw" else (None, None)
+
     try:
+          
         if "```json" in response:
-            start = response.find("```json") + 7
-            end = response.rfind("```")
-            response = response[start:end].strip()
+            response = response.split("```json", 1)[1].rsplit("```", 1)[0].strip()
         elif "```" in response:
-            response = response.split("```")[1].split("```")[0].strip()
+            response = response.split("```", 1)[1].rsplit("```", 1)[0].strip()
+
+          
+        match = re.search(r'\{.*?\}', response, re.DOTALL)
+
+        if match:
+            clean_json_str = match.group(0)
+            data = json.loads(clean_json_str)
+        else:
+            raise ValueError("No parsable JSON object found.")
+
+          
+        if entity_type == "cw":
+            return data.get('category'), data.get('name'), data.get('description')
+        elif entity_type in ("tool", "category"):
+            return data.get('name'), data.get('description')
+
+    except Exception as e:
+        print(f"LLM Parse FATAL Error during {entity_type} generation: {e} | Raw: {response}")
+        pass
+
+    return (None, None, None) if entity_type == "cw" else (None, None)
+
+def analyze_worker_profile_hierarchical(description):
+    prompt = f"""Analyze the following worker description: "{description}"
+
+    Task: Identify the main, macro-level jobs (Category and Task) the worker performs. For EACH job, determine:
+    1. Broad Category (e.g. Plumber, Electrician)
+    2. Specific Macro-Task (e.g. Tap Repair, Fan Installation). Keep the task name concise.
+    3. Required Tools (List of 3-5 essential macro-level tools: e.g., 'Screwdriver Set').
+
+    You must output ONLY a valid JSON list of objects. Do NOT include any introductory text or markdown tags.
+
+    Example Structure:
+    [
+      {{"category": "Plumber", "task": "Pipe Fixing", "tools": ["Wrench Set", "Sealant"]}},
+      {{"category": "Electrician", "task": "Switch Replacement", "tools": ["Screwdriver Set", "Voltage Tester"]}}
+    ]
+
+    JSON List:"""
+
+    response = run_llm(prompt, max_new_tokens=1024)
+
+    if response in ("LLM_DISABLED", "LLM_ERROR"):
+        print("Analyze Hierarchy Failed: LLM returned generic error state.")
+        return []
+
+      
+    try:
+        if response.startswith('['):
+            pass
+        elif "```json" in response:
+            response = response.split("```json", 1)[1].rsplit("```", 1)[0].strip()
+        elif "```" in response:
+            response = response.split("```", 1)[1].rsplit("```", 1)[0].strip()
+
         data = json.loads(response)
-        task_name = data.get("task", user_input[:32]).strip()
-        category_name = data.get("category", category).strip()
-        if "\n" in task_name: task_name = task_name.split("\n")[0].strip()
-        if "\n" in category_name: category_name = category_name.split("\n")[0].strip()
-        return category_name, task_name
-    except:
-        print(f"LLM failed to return structured data. Raw: {response}")
-        return category, user_input.split('.')[0].strip()[:32]
 
-def llm_suggest_tools(canonical_work, description=""):
-    prompt = f"""Job: "{canonical_work}"
-Description: "{description}"
+        if isinstance(data, list):
+            if not data:
+                print("Analyze Hierarchy Warning: LLM returned an empty list [].")
+            return data
+        else:
+            print(f"Analyze Hierarchy Failed: JSON loaded successfully but was not a list. Type: {type(data)}")
+            return []
 
-List the essential tools needed for this job (max 5). Format: one tool per line.
-Examples:
-- Wrench Set
-- Screwdriver Kit
-- Power Drill
-- Pipe Cutter
-- Teflon Tape
+    except Exception as e:
+        print(f"Analyze Hierarchy Failed: JSON Parse Failure: {e} | Raw Response: {response[:150]}...")
+        return []
 
-List tools:"""
-    result = run_llm(prompt, max_new_tokens=100)
-    tools = [line.strip("- ").strip() for line in result.split("\n") if line.strip()]
-    return tools[:5]
+  
 
-def llm_normalize_tool_name(user_tool_input):
-    prompt = f"""User typed: "{user_tool_input}"
+def get_or_create_main_category(raw_category_name):
+    raw_category_name = str(raw_category_name).strip().title()
 
-Normalize this to a standard, general tool name. Examples:
-"big drill" → "Heavy Power Drill"
-"driller" → "Power Drill"
-"screw driver" → "Screwdriver Set"
-"tape" -> "Teflon Tape"
+      
+    embedding = pinecone_embed_text(raw_category_name)
+    matches = pinecone_query(embedding, top_k=5, filter_dict={"type": "category"})
 
-Return ONLY the normalized tool name:"""
-    return run_llm(prompt, max_new_tokens=20)
+    selected_cat_id = None
+
+    if matches:
+        selected_cat_id = llm_select_best_match(raw_category_name, matches)
+
+    if selected_cat_id:
+        doc = db.collection(COL_CATEGORIES).document(selected_cat_id).get().to_dict()
+        print(f"✅ Found Existing Category: {doc['name']} ({doc['category_id']})")
+        return doc['category_id'], doc['name']
+
+      
+    print(f"🆕 Creating New Category: {raw_category_name}")
+
+    cat_name, cat_desc = llm_generate_new_entity(raw_category_name, "category")
+
+    if not cat_name:
+        cat_name = raw_category_name
+        cat_desc = f"User defined category: {raw_category_name}"
+
+    cat_id = str(uuid.uuid4())
+    embedding = pinecone_embed_text(cat_name)
+
+    firestore_data = {
+        "category_id": cat_id,
+        "name": cat_name,
+        "description": cat_desc,
+        "type": "category",
+        "createdAt": now_ts()
+    }
+
+    pinecone_metadata = {
+        "category_id": cat_id,
+        "name": cat_name,
+        "description": cat_desc,
+        "type": "category"
+    }
+
+    db.collection(COL_CATEGORIES).document(cat_id).set(firestore_data)
+    pinecone_upsert(cat_id, embedding, pinecone_metadata)
+
+    return cat_id, cat_name
 
 def get_or_create_canonical_tool(raw_tool_name):
     raw_tool_name = str(raw_tool_name).strip()
     if len(raw_tool_name) < 2: return None
 
+      
     embedding = pinecone_embed_text(raw_tool_name)
-    matches = pinecone_query(embedding, top_k=1, filter_dict={"type": "tool"})
+    matches = pinecone_query(embedding, top_k=15, filter_dict={"type": "tool"})
 
-    if matches and matches[0]["score"] > 0.85:
-        existing_tool = matches[0]["metadata"]
-        print(f"🔧 Tool Match (Raw): '{raw_tool_name}' -> '{existing_tool['name']}' ({matches[0]['score']:.2f})")
-        return existing_tool["name"]
+    selected_tool_id = None
 
-    clean_name = llm_normalize_tool_name(raw_tool_name)
-    if not clean_name or "LLM_ERROR" in clean_name or "LLM_DISABLED" in clean_name:
+    if matches:
+          
+        selected_tool_id = llm_select_best_match(raw_tool_name, matches)
+
+    if selected_tool_id:
+          
+        doc = db.collection(COL_TOOLS).document(selected_tool_id).get().to_dict()
+        print(f"🔧 Tool Match (LLM Selected): '{raw_tool_name}' -> '{doc['name']}'")
+        return doc['name']
+
+      
+    print(f"🆕 Creating New Tool: {raw_tool_name}")
+    clean_name, description = llm_generate_new_entity(raw_tool_name, "tool")
+
+    if not clean_name:
         clean_name = raw_tool_name
+        description = f"User defined tool: {raw_tool_name}"
 
-    clean_embedding = pinecone_embed_text(clean_name)
-    clean_matches = pinecone_query(clean_embedding, top_k=1, filter_dict={"type": "tool"})
-
-    if clean_matches and clean_matches[0]["score"] > 0.90:
-        existing_tool = clean_matches[0]["metadata"]
-        print(f"🔧 Tool Match (Clean): '{clean_name}' -> '{existing_tool['name']}'")
-        return existing_tool["name"]
-
-    print(f"🆕 Creating New Tool: {clean_name}")
     tool_id = slugify(clean_name)
+    embedding = pinecone_embed_text(clean_name)
 
+    existing_doc = db.collection(COL_TOOLS).document(tool_id).get()
+    if existing_doc.exists:
+        return existing_doc.to_dict()['name']
+
+      
     firestore_data = {
         "tool_id": tool_id,
         "name": clean_name,
+        "description": description,
         "type": "tool",
         "createdAt": now_ts(),
         "usageCount": 1
     }
-
     pinecone_metadata = {
         "tool_id": tool_id,
         "name": clean_name,
-        "type": "tool"
+        "type": "tool",
+        "description": description
     }
 
-    db.collection(COL_TOOLS).document(tool_id).set(firestore_data, merge=True)
-
-    pinecone_upsert(tool_id, clean_embedding, pinecone_metadata)
+    db.collection(COL_TOOLS).document(tool_id).set(firestore_data)
+    pinecone_upsert(tool_id, embedding, pinecone_metadata)
 
     return clean_name
 
-def analyze_worker_profile_hierarchical(description):
-    prompt = f"""Analyze the following worker description: "{description}"
+def get_or_create_global_canonical_work(raw_category, raw_task_input):
 
-    Identify the specific jobs they do. For EACH job, determine:
-    1. Broad Category (e.g. Plumber, Electrician, Carpenter)
-    2. Specific Task (e.g. Tap Repair, Fan Installation, Furniture Polish). Keep the task name concise.
-    3. Required Tools (List of 3-5 essential tools)
+      
+    cat_id, cat_name = get_or_create_main_category(raw_category)
 
-    Return a valid JSON list of objects. Example:
-    [
-      {{"category": "Plumber", "task": "Pipe Fixing", "tools": ["Wrench", "Sealant"]}},
-      {{"category": "Electrician", "task": "Switch Replacement", "tools": ["Screwdriver", "Tester"]}}
-    ]
+      
+    embedding = pinecone_embed_text(raw_task_input)
+    matches = pinecone_query(embedding, top_k=5, filter_dict={"type": "job", "category_id": cat_id})
 
-    JSON:"""
+    selected_cw_id = None
 
-    response = run_llm(prompt, max_new_tokens=400)
+    if matches:
+        selected_cw_id = llm_select_best_match(raw_task_input, matches)
 
-    try:
-        if "```json" in response:
-            start_index = response.find("```json") + 7
-            end_index = response.rfind("```")
-            if start_index != -1 and end_index != -1 and start_index < end_index:
-                response = response[start_index:end_index].strip()
-            else:
-                response = response.replace("```json", "").replace("```", "").strip()
-        elif "```" in response:
-             response = response.split("```")[1].split("```")[0].strip()
+        if selected_cw_id:
+              
+            return db.collection(COL_CW).document(selected_cw_id).get().to_dict()
 
-        data = json.loads(response)
-        return data
-    except Exception as e:
-        print(f"LLM Parse Error in hierarchical analysis: {e} | Raw: {response}")
-        return []
+      
+    print(f"🆕 Creating New CW: {raw_task_input} under {cat_name}")
 
-# --- GLOBAL CANONICAL WORK REGISTRY FUNCTIONS ---
-def get_or_create_global_canonical_work(category, task):
-    # FIX 2: Use deterministic slug as CW ID for reliable lookups
-    cw_id = slugify(f"{category}_{task}")
-    doc_ref = db.collection(COL_CW).document(cw_id)
-    doc = doc_ref.get()
+      
+    ai_cat, cw_name, cw_desc = llm_generate_new_entity(raw_task_input, "cw")
 
-    if doc.exists:
-        return doc.to_dict()
+    if not cw_name:
+        cw_name = slugify(raw_task_input)[:32]
+        cw_desc = f"AI Generation Failed. Manual description for {cw_name}."
 
-    print(f"Creating new Global CW: {category} - {task}")
+    cw_id = str(uuid.uuid4())
+    embedding = pinecone_embed_text(f"{cat_name} {cw_name}")
 
-    prompt = f"List 5 essential tools required for a {category} performing '{task}'. Comma separated."
-    tools_str = run_llm(prompt, max_new_tokens=50)
-    required_tools = [t.strip() for t in tools_str.split(',') if t.strip()]
+      
+    concepts_prompt = f"List 5 essential tool names for '{cw_name}'. Comma separated. Use macro-level names only."
+    concepts_str = run_llm(concepts_prompt, max_new_tokens=50)
+    tool_names = [t.strip() for t in concepts_str.split(',') if t.strip()]
 
-    now_dt = datetime.now(timezone.utc)
+    final_tool_names = []
 
+    for t_name in tool_names:
+        canonical_name = get_or_create_canonical_tool(t_name)
+        if canonical_name:
+            final_tool_names.append(canonical_name)
+
+      
     firestore_data = {
         "cw_id": cw_id,
-        "canonicalWork": task,
-        "category": category,
-        "description": f"Standard {task} services by a {category}",
-        "requiredTools": required_tools,
+        "canonicalWork": cw_name,
+        "description": cw_desc,
+        "category_id": cat_id,
+        "category": cat_name,
+        "requiredTools": list(set(final_tool_names)),
         "createdAt": now_ts(),
         "totalJobsGlobal": 0
     }
 
     pinecone_metadata = {
         "cw_id": cw_id,
-        "canonicalWork": task,
-        "category": category,
-        "description": f"Standard {task} services by a {category}",
-        "requiredTools": required_tools,
+        "canonicalWork": cw_name,
+        "category_id": cat_id,
+        "category": cat_name,
+        "description": cw_desc,
         "type": "job"
     }
 
     db.collection(COL_CW).document(cw_id).set(firestore_data)
+    pinecone_upsert(cw_id, embedding, pinecone_metadata)
 
-    pinecone_upsert(cw_id, pinecone_embed_text(f"{category} {task}"), pinecone_metadata)
+    ret_data = firestore_data.copy()
+    ret_data["createdAt"] = datetime.now(timezone.utc).isoformat()
+    return ret_data
 
-    serializable_data = firestore_data.copy()
-    serializable_data["createdAt"] = now_dt.isoformat()
-
-    return serializable_data
-
-# --- SMART WORKER MATCHING ---
+  
 def calculate_worker_score(worker, cw_name, required_tools):
     """
     Calculate comprehensive worker score based on:
@@ -418,7 +578,7 @@ def calculate_worker_score(worker, cw_name, required_tools):
     if required_set:
         tool_match_ratio = len(worker_tools & required_set) / len(required_set)
 
-    tool_score = tool_match_ratio * 5.0  # Scale to 0-5
+    tool_score = tool_match_ratio * 5.0    
 
     final_score = (cw_score * 0.6) + (global_rating * 0.2) + (tool_score * 0.2)
 
@@ -435,11 +595,11 @@ def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=5):
     """
     candidates = []
 
-    # Strategy 1: Exact Canonical Work Match (Highest Confidence)
+      
     try:
         docs = db.collection(COL_WORKERS)\
-            .where("canonicalWorks", "array_contains", cw_name)\
-            .where("isActive", "==", True)\
+            .where(filter=FieldFilter("canonicalWorks", "array_contains", cw_name))\
+            .where(filter=FieldFilter("isActive", "==", True))\
             .limit(50).stream()
 
         for doc in docs:
@@ -455,43 +615,35 @@ def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=5):
 
         if candidates:
             candidates.sort(key=lambda x: x["score"], reverse=True)
-            # Return immediately if we have enough high-confidence candidates
             if len(candidates) >= top_k:
                  return candidates[:top_k]
 
     except Exception as e:
         print(f"Error during CW exact match query: {e}")
 
-    # Strategy 2: Fallback to Broad Category Match (Lower Confidence, wider net)
+      
     if cw_category and cw_category != "General":
         try:
-            # Check a wider pool of active workers
-            all_docs = db.collection(COL_WORKERS).where("isActive", "==", True).limit(200).stream()
+            all_docs = db.collection(COL_WORKERS).where(filter=FieldFilter("isActive", "==", True)).limit(200).stream()
 
             for doc in all_docs:
                 w = doc.to_dict()
 
-                # Check if worker is already in candidates list (skip to avoid double-scoring)
                 if any(c["workerId"] == doc.id for c in candidates):
                     continue
 
-                # Check if worker has expertise in this broad category
                 if cw_category in w.get("cw_data", {}):
-                    # Use best score from that category as baseline (max rating of any task in that category)
                     cat_scores = [float(x.get("rating", 0.0)) for x in w["cw_data"][cw_category].values()]
-                    baseline = max(cat_scores) if cat_scores else 4.0 # Default to 4.0 if only cat exists but no tasks/ratings
+                    baseline = max(cat_scores) if cat_scores else 4.0
 
-                    # Create a simulated worker data structure for scoring
                     w_sim = w.copy()
-                    # Assign the Category's baseline score to the CW that was requested
                     w_sim["cwSkillScore"] = {cw_name: {"score": baseline}}
 
-                    # Recalculate score using the category baseline for the CW
                     score = calculate_worker_score(w_sim, cw_name, required_tools)
 
                     candidates.append({
                         "workerId": doc.id,
-                        "score": score["finalScore"] * 0.95, # Slight penalty for category fallback
+                        "score": score["finalScore"] * 0.95,
                         "name": w.get("name"),
                         "phone": w.get("phone"),
                         "breakdown": score
@@ -500,12 +652,12 @@ def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=5):
         except Exception as e:
             print(f"Error during Category fallback query: {e}")
 
-    # Final sort and limit
+      
     candidates.sort(key=lambda x: x["score"], reverse=True)
     return candidates[:top_k]
 
 
-# --- TRANSACTIONAL HELPERS (Same as original) ---
+  
 @transactional
 def cancel_booking_in_transaction(tx, booking_ref, cancelled_by, reason):
     snap = booking_ref.get(transaction=tx)
@@ -548,8 +700,7 @@ def cancel_booking_in_transaction(tx, booking_ref, cancelled_by, reason):
 
 @transactional
 def accept_booking_in_transaction(tx, booking_ref, req_ref, worker_id):
-    # --- STEP 1: ALL READS FIRST (MUST BE CONTIGUOUS) ---
-    # 1. Read Booking, Request, and Worker Availability (Primary Reads)
+      
     bsnap = booking_ref.get(transaction=tx)
     req_snap = req_ref.get(transaction=tx)
 
@@ -557,34 +708,28 @@ def accept_booking_in_transaction(tx, booking_ref, req_ref, worker_id):
     if not req_snap.exists: raise Exception("NOT_INVITED")
     booking = bsnap.to_dict()
 
-    # Read the availability document
     avail_ref = db.collection(COL_WORKERS).document(worker_id).collection("availability").document(booking["date"])
     asnap = avail_ref.get(transaction=tx)
 
-    # 2. READ: Fetch references/IDs of OTHER worker requests for cleanup (Secondary Reads)
-    # This must happen before any writes start. We only collect the references/IDs.
     other_requests_to_expire = [
         r.reference
         for r in booking_ref.collection("workerRequests").stream(transaction=tx)
         if r.id != worker_id and r.to_dict().get("status") == "pending"
     ]
 
-    # Calculate current mask and needed mask
     curr = int(asnap.to_dict().get("mask", FULL_MASK)) if asnap.exists else FULL_MASK
     needed = hours_to_mask(int(booking["startHour"]), int(booking["endHour"]))
 
-    # --- STEP 2: VALIDATION AND EARLY EXIT (No writes here) ---
+      
     if booking.get("assignedWorker"): raise Exception("ALREADY_ASSIGNED")
     if booking.get("status") not in ("b1", "b2"): raise Exception("BOOKING_NOT_PENDING")
 
     if (curr & needed) != needed:
-        # If unavailable, we simply raise. No tx.update() here.
         raise Exception("WORKER_NOT_AVAILABLE")
 
-    # --- STEP 3: ALL WRITES ---
+      
     now_ts_val = now_ts()
 
-    # 1. Update Accepted Booking (WRITE 1)
     tx.update(booking_ref, {
         "assignedWorker": worker_id,
         "workerId": worker_id,
@@ -593,17 +738,13 @@ def accept_booking_in_transaction(tx, booking_ref, req_ref, worker_id):
         "updatedAt": now_ts_val
     })
 
-    # 2. Update Accepted Worker Request (WRITE 2)
     tx.update(req_ref, {"status": "accepted", "acceptedAt": now_ts_val, "updatedAt": now_ts_val})
 
-    # 3. Expire Other Requests (Cleanup Writes - using the references read earlier)
     for r_ref in other_requests_to_expire:
         tx.update(r_ref, {"status": "expired", "updatedAt": now_ts_val})
 
-    # 4. Update Worker Availability Mask (Set bits to 0 for booked hours)
     tx.set(avail_ref, {"mask": curr & (~needed), "updatedAt": now_ts_val}, merge=True)
 
-    # 5. Log Action
     tx.update(booking_ref, {
         "log.actions": firestore.ArrayUnion([{
             "ts": datetime.now(timezone.utc),
@@ -631,7 +772,7 @@ def submit_rating_in_transaction(tx, booking_ref, worker_ref, user_id, rating, r
     cw_name = booking_data.get("serviceType", "General")
     job_count = int(worker_data.get("completedBookings", 0))
 
-    # 1. Update worker global average rating
+      
     old_avg = float(worker_data.get("avgRating", 0.0))
     if job_count > 0:
         old_total_score = old_avg * (job_count - 1)
@@ -645,7 +786,7 @@ def submit_rating_in_transaction(tx, booking_ref, worker_ref, user_id, rating, r
         "updatedAt": now_ts_val
     })
 
-    # 2. Update CW-specific skill score
+      
     if cw_name in worker_data.get("cwSkillScore", {}):
         task_count = worker_data["cwSkillScore"][cw_name].get("jobsCompleted", 0)
         curr_task_rating = worker_data["cwSkillScore"][cw_name].get("score", 0.0)
@@ -654,23 +795,36 @@ def submit_rating_in_transaction(tx, booking_ref, worker_ref, user_id, rating, r
             if task_count == 1:
                 new_task_avg = rating
             else:
-                # Assuming curr_task_rating is the average of the *previous* jobs,
-                # or a boosted score that we now correct to a true average.
                 old_task_total = curr_task_rating * (task_count - 1)
                 new_task_avg = (old_task_total + rating) / task_count
 
             tx.update(worker_ref, {f"cwSkillScore.{cw_name}.score": new_task_avg})
 
-    # 3. Update booking status/rating
+      
     tx.update(booking_ref, {
         "rating": rating,
         "review": review,
-        "status": "r1", # Rated
+        "status": "r1",   
         "updatedAt": now_ts_val
     })
     return True
 
-# --- ROUTES: AUTH & ONBOARDING ---
+  
+def _handle_auth_creation(uid, password, name):
+    try:
+        auth.create_user(
+            uid=uid,
+            email=f"{uid}{EMAIL_SUFFIX}",
+            password=password,
+            display_name=name
+        )
+        return True, None
+    except auth.EmailAlreadyExistsError:
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 @app.route("/generate-otp", methods=["POST"])
 def generate_otp():
     secret = request.headers.get("x-secret-key")
@@ -727,160 +881,166 @@ def verify_otp_log():
     doc_ref.delete()
     return jsonify({"valid": True}), 200
 
+  
 @app.route("/complete-signup", methods=["POST"])
 @require_secret
 def complete_signup():
-    data = request.json
-    phone = sanitize_phone(data.get("phone"))
-    password = data.get("password")
-    name = data.get("name")
-    is_worker = data.get("isWorker", False)
-
-    if not db.collection(COL_VERIFIED).document(phone).get().exists:
-        return jsonify({"error": "Verification failed"}), 403
-
+      
     try:
+        data = request.json
+        phone = sanitize_phone(data.get("phone"))
+        password = data.get("password")
+        name = data.get("name")
+        is_worker = data.get("isWorker", False)
+
+          
         uid = phone
-        try:
-            auth.create_user(
-                uid=uid,
-                email=f"{phone}{EMAIL_SUFFIX}",
-                password=password,
-                display_name=name
-            )
-        except auth.EmailAlreadyExistsError:
-            pass
-        except Exception as e:
-            print(f"Firebase Auth Error: {e}")
-            return jsonify({"error": f"Firebase Auth Error: {e}"}), 500
-
-        now_dt = datetime.now(timezone.utc)
-        now_ts_val = now_ts()
-
         coll = COL_WORKERS if is_worker else COL_USERS
-        profile = {
-            "uid": uid,
-            "phone": phone,
+        doc_ref = db.collection(coll).document(uid)
+        worker_exists = doc_ref.get().exists
+
+          
+        try:
+            hourly = int(data.get("hourlyRate", 300))
+        except (ValueError, TypeError):
+            hourly = 300
+
+          
+        if not worker_exists:
+            if not db.collection(COL_VERIFIED).document(phone).get().exists:
+                return jsonify({"error": "Verification required for new signup"}), 403
+
+            if not password:
+                return jsonify({"error": "Password required for initial signup"}), 400
+
+              
+            auth_ok, auth_err = _handle_auth_creation(uid, password, name)
+            if not auth_ok:
+                print(f"Firebase Auth Error: {auth_err}")
+                return jsonify({"error": f"Firebase Auth Error: {auth_err}"}), 500
+
+            db.collection(COL_VERIFIED).document(phone).delete()
+
+              
+            base_profile_updates = {
+                "uid": uid,
+                "phone": phone,
+                "name": name,
+                "pincode": data.get("pin"),
+                "locality": data.get("locality"),
+                "role": "worker" if is_worker else "user",
+                "createdAt": now_ts(),
+                "isActive": True,
+                "updatedAt": now_ts()
+            }
+
+            if not is_worker:
+                  
+                doc_ref.set(base_profile_updates, merge=True)
+                return jsonify({"ok": True, "uid": uid, "status": "User Created"}), 200
+
+        else:
+              
+            if not is_worker:
+                  
+                update_data = {
+                    "name": name,
+                    "pincode": data.get("pin"),
+                    "locality": data.get("locality"),
+                    "updatedAt": now_ts()
+                }
+                doc_ref.update(update_data)
+                return jsonify({"ok": True, "uid": uid, "status": "User Profile Updated"}), 200
+
+          
+
+        verified_skills_payload = data.get("verifiedSkills", [])
+
+        all_canonical_tools = set()
+        cw_data_to_save = {}
+        cw_skill_score = {}
+        all_canonical_works = []
+        tool_normalization_cache = {}
+
+          
+        for skill_entry in verified_skills_payload:
+            raw_tools_for_skill = skill_entry.get("myTools", [])
+            for raw_tool_str in raw_tools_for_skill:
+                raw_tool_str = str(raw_tool_str).strip()
+                if raw_tool_str and raw_tool_str not in tool_normalization_cache:
+                    canonical_name = get_or_create_canonical_tool(raw_tool_str)
+                    if canonical_name:
+                        tool_normalization_cache[raw_tool_str] = canonical_name
+                        all_canonical_tools.add(canonical_name)
+
+          
+        for skill_entry in verified_skills_payload:
+            task = skill_entry.get("task", "General Task").strip()
+            category = skill_entry.get("category", "General").strip()
+
+            cw_doc_data = get_or_create_global_canonical_work(category, task)
+
+            task_name_std = cw_doc_data['canonicalWork']
+            category_name_std = cw_doc_data['category']
+
+            all_canonical_works.append(task_name_std)
+            task_slug = slugify(task_name_std)
+
+            canonical_tools_for_task = [
+                tool_normalization_cache[str(t).strip()]
+                for t in skill_entry.get("myTools", [])
+                if str(t).strip() in tool_normalization_cache
+            ]
+
+            if category_name_std not in cw_data_to_save:
+                cw_data_to_save[category_name_std] = {}
+
+            cw_data_to_save[category_name_std][task_slug] = {
+                "name": task_name_std,
+                "category": category_name_std,
+                "tools": list(set(canonical_tools_for_task)),
+                "rating": 5.0,
+                "total_works": 0
+            }
+
+            if task_name_std not in cw_skill_score:
+                cw_skill_score[task_name_std] = {"score": 5.0, "jobsCompleted": 0}
+
+          
+        worker_update_data = {
             "name": name,
             "pincode": data.get("pin"),
             "locality": data.get("locality"),
-            "role": "worker" if is_worker else "user",
-            "createdAt": now_dt,
-            "updatedAt": now_dt,
-            "isActive": True
+            "perHourCharge": hourly,
+            "toolsAvailable": list(all_canonical_tools),
+            "canonicalWorks": list(set(all_canonical_works)),
+            "cwSkillScore": cw_skill_score,
+            "cw_data": cw_data_to_save,
+            "profileDescription": data.get("profileDescription"),
+            "updatedAt": now_ts(),
         }
 
-        if is_worker:
-            hourly = int(data.get("hourlyRate", 300))
-            verified_skills_payload = data.get("verifiedSkills", [])
-            all_raw_tools = set()
-            tool_normalization_cache = {}
-
-            # 1. First Pass: Collect all unique raw tools & normalize them
-            for skill_entry in verified_skills_payload:
-                raw_tools_for_skill = skill_entry.get("myTools", [])
-                for tool in raw_tools_for_skill:
-                    raw_tool_str = str(tool).strip()
-                    if raw_tool_str and raw_tool_str not in tool_normalization_cache:
-                        canonical_name = get_or_create_canonical_tool(raw_tool_str)
-                        if canonical_name and canonical_name not in ("LLM_ERROR", "LLM_DISABLED"):
-                            tool_normalization_cache[raw_tool_str] = canonical_name
-                            all_raw_tools.add(canonical_name)
-
-            profile["toolsAvailable"] = list(all_raw_tools)
-
-            worker_extras = {
-                "availability": "Y",
+        if not worker_exists:
+              
+            worker_update_data.update({
                 "avgRating": 5.0,
                 "completedBookings": 0,
-                "perHourCharge": hourly,
-                "canonicalWorks": [],
-                "cwSkillScore": {},
-            }
-            profile.update(worker_extras)
+                "availability": "Y",
+                **base_profile_updates,
+            })
+            doc_ref.set(worker_update_data, merge=True)
+            return jsonify({"ok": True, "uid": uid, "status": "Worker Created & Profile Set"}), 200
+        else:
+              
+            doc_ref.update(worker_update_data)
+            return jsonify({"ok": True, "uid": uid, "status": "Worker Profile Updated"}), 200
 
-            # 2. Second Pass: Structure skills and save global CW entries
-            all_canonical_works = []
-            cw_data_to_save = {}
-
-            for skill_entry in verified_skills_payload:
-                task = skill_entry.get("task", "General Task").strip()
-                category = skill_entry.get("category", "General").strip()
-
-                canonical_tools_for_task = [
-                    tool_normalization_cache[str(t).strip()]
-                    for t in skill_entry.get("myTools", [])
-                    if str(t).strip() in tool_normalization_cache
-                ]
-
-                all_canonical_works.append(task)
-
-                task_slug = slugify(task)
-                if category not in cw_data_to_save:
-                    cw_data_to_save[category] = {}
-
-                cw_data_to_save[category][task_slug] = {
-                    "name": task,
-                    "category": category,
-                    "tools": list(set(canonical_tools_for_task)),
-                    "rating": 5.0,
-                    "total_works": 0
-                }
-
-                if task not in profile["cwSkillScore"]:
-                    profile["cwSkillScore"][task] = {"score": 5.0, "jobsCompleted": 0}
-
-            profile["canonicalWorks"] = all_canonical_works
-            profile["cw_data"] = cw_data_to_save
-
-            # 3. CW Document Upsert Logic (only if CW does not exist)
-            for cw_name in all_canonical_works:
-                cw_slug = slugify(cw_name)
-                cw_doc_ref = db.collection(COL_CW).document(cw_slug)
-
-                cw_snap = cw_doc_ref.get()
-
-                if not cw_snap.exists:
-                    req_tools_global = list(profile["toolsAvailable"])
-
-                    cw_doc = {
-                        "canonicalWork": cw_name,
-                        "description": data.get("profileDescription", ""),
-                        "requiredTools": req_tools_global,
-                        "jobsCompleted": 0,
-                        "totalScore": 0.0,
-                        "cwScore": 0.0,
-                        "createdAt": now_dt,
-                        "createdBy": uid
-                    }
-
-                    db.collection(COL_CW).document(cw_slug).set({
-                        **cw_doc,
-                        "createdAt": now_ts_val
-                    }, merge=True)
-
-                    pinecone_upsert(cw_slug, pinecone_embed_text(cw_name + " " + cw_doc["description"]), {
-                        "canonicalWork": cw_name,
-                        "description": cw_doc["description"],
-                        "requiredTools": req_tools_global,
-                        "type": "job"
-                    })
-
-        # Save final profile
-        db_profile = profile.copy()
-        db_profile["createdAt"] = now_ts_val
-        db_profile["updatedAt"] = now_ts_val
-
-        db.collection(coll).document(uid).set(db_profile, merge=True)
-        db.collection(COL_VERIFIED).document(phone).delete()
-
-        return jsonify({"ok": True, "uid": uid}), 200
-
+      
     except Exception as e:
-        print(f"Signup Error: {e}")
+        print(f"Signup/Update Error for {uid}: {e}")
         return jsonify({"error": str(e)}), 500
 
-# --- ROUTES: CANONICAL WORKS & TOOLS ---
+  
 
 @app.route("/cw/predict-multi", methods=["POST"])
 @require_secret
@@ -891,7 +1051,7 @@ def predict_multi_skills():
     if not text:
         return jsonify({"error": "text required"}), 400
 
-    # 1. Use AI to parse Hierarchy
+      
     ai_jobs = analyze_worker_profile_hierarchical(text)
 
     results = []
@@ -901,7 +1061,7 @@ def predict_multi_skills():
 
         if not cat or not task: continue
 
-        # 2. Fetch/Create Standard Data
+          
         try:
             global_cw = get_or_create_global_canonical_work(cat, task)
         except Exception as e:
@@ -909,8 +1069,8 @@ def predict_multi_skills():
             continue
 
         results.append({
-            "category": cat,
-            "task": task,
+            "category": global_cw['category'],
+            "task": global_cw['canonicalWork'],
             "cw_id": global_cw["cw_id"],
             "suggestedTools": global_cw["requiredTools"],
             "aiSuggestedToolsFromProfile": job.get("tools", [])
@@ -929,37 +1089,43 @@ def predict_canonical_work():
 
     try:
         embedding = pinecone_embed_text(text)
-        # Find 3 closest matches
+          
         matches = pinecone_query(embedding, top_k=3, filter_dict={"type": "job"})
 
         selected_cw_data = None
-        if matches and matches[0]["score"] > 0.7:
-             # Use LLM to select best match from the 3 vector candidates
+        selected_cw_id = None
+
+        if matches:
+              
             selected_cw_id = llm_select_best_match(text, matches)
+
             if selected_cw_id:
-                selected_cw_data = next((m['metadata'] for m in matches if m['id'] == selected_cw_id), None)
+                  
+                selected_cw_data = db.collection(COL_CW).document(selected_cw_id).get().to_dict()
 
         if selected_cw_data:
-            cw_name = selected_cw_data.get("canonicalWork")
-            req_tools = selected_cw_data.get("requiredTools", [])
-            confidence = next((m['score'] for m in matches if m['id'] == selected_cw_id), 0.0)
-
+              
             return jsonify({
-                "canonicalWork": cw_name,
-                "requiredTools": req_tools,
-                "confidence": confidence,
+                "canonicalWork": selected_cw_data.get("canonicalWork"),
+                "requiredTools": selected_cw_data.get("requiredTools", []),
+                "confidence": next((m['score'] for m in matches if m['id'] == selected_cw_id), 0.0),
                 "isNew": False,
                 "alternatives": [m["metadata"] for m in matches if m['id'] != selected_cw_id]
             }), 200
         else:
-            # Cold Start: LLM generates new CW name and category
-            category, cw_name = llm_generate_canonical_work(text)
+              
+            print(f"COLD START: Generating new CW for notes: {text}")
+
+            category, cw_name, description = llm_generate_new_entity(text, "cw")
+
+            if not cw_name:
+                return jsonify({"error": "AI failed to categorize the request."}), 400
+
             global_cw = get_or_create_global_canonical_work(category, cw_name)
-            req_tools = global_cw["requiredTools"]
 
             return jsonify({
-                "canonicalWork": cw_name,
-                "requiredTools": req_tools,
+                "canonicalWork": global_cw["canonicalWork"],
+                "requiredTools": global_cw["requiredTools"],
                 "confidence": 0.0,
                 "isNew": True,
                 "suggestedByAI": True
@@ -981,15 +1147,15 @@ def normalize_tool():
     try:
         normalized = get_or_create_canonical_tool(tool_input)
 
-        if normalized in ("LLM_ERROR", "LLM_DISABLED"):
-            normalized = llm_normalize_tool_name(tool_input)
+        if "LLM_ERROR" in normalized or "LLM_DISABLED" in normalized:
+             return jsonify({"error": "Tool normalization failed or disabled."}), 500
 
         return jsonify({"original": tool_input, "normalized": normalized}), 200
     except Exception as e:
         print(f"Normalize Tool Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-# --- ROUTES: BOOKING & TRANSACTIONS ---
+  
 
 @app.route("/create-booking", methods=["POST"])
 @require_secret
@@ -998,7 +1164,7 @@ def create_booking():
     user_id = data.get("userId")
     candidate_workers_input = data.get("candidateWorkers", [])
 
-    # Step 1: Determine Canonical Work, Category, and Required Tools
+      
     notes = data.get("notes", "")
     service_type = data.get("serviceType", "General").strip()
     service_category = data.get("serviceCategory", "General").strip()
@@ -1008,43 +1174,39 @@ def create_booking():
         if len(notes) < 20:
             return jsonify({"error": "Job description too short. Requires a minimum of 20 characters for accurate matching."}), 400
 
-        # Vector Search: Find 3 closest existing CWs
+          
         embedding = pinecone_embed_text(notes)
         matches = pinecone_query(embedding, top_k=3, filter_dict={"type": "job"})
 
         selected_cw_data = None
+        selected_cw_id = None
 
-        # NOTE: Using a lower score threshold (e.g., 0.55) here might help prevent cold-start creation
-        # when a close-enough CW already exists, but the LLM selection is the critical tie-breaker.
         if matches:
-            # LLM Selection: Strictly pick the best match ID from top 3
-            # This is critical to map vague user input to a canonical work even if the raw vector score is moderate.
             selected_cw_id = llm_select_best_match(notes, matches)
-
-            if selected_cw_id and selected_cw_id != "NONE":
-                # Match Found: Find the corresponding data from the matches list
-                selected_cw_data = next((m['metadata'] for m in matches if m['id'] == selected_cw_id), None)
+            if selected_cw_id:
+                selected_cw_data = db.collection(COL_CW).document(selected_cw_id).get().to_dict()
 
         if selected_cw_data:
-            # Match Found: Use the CW details from the database
-            service_type = selected_cw_data.get("canonicalWork", service_type)
-            service_category = selected_cw_data.get("category", service_category)
-            required_tools = selected_cw_data.get("requiredTools", required_tools)
+            cw_data = selected_cw_data
         else:
-            # Fallback to LLM to generate new CW (Cold Start)
-            print(f"COLD START: Generating new CW for notes: {notes}")
-            category, cw_name = llm_generate_canonical_work(notes)
-            global_cw = get_or_create_global_canonical_work(category, cw_name)
+              
+            category, cw_name, description = llm_generate_new_entity(notes, "cw")
 
-            service_type = global_cw["canonicalWork"]
-            service_category = global_cw["category"]
-            required_tools = global_cw["requiredTools"]
+            if not cw_name:
+                return jsonify({"error": "AI failed to categorize job request for matching."}), 400
+
+            cw_data = get_or_create_global_canonical_work(category, cw_name)
+
+          
+        service_type = cw_data["canonicalWork"]
+        service_category = cw_data["category"]
+        required_tools = cw_data["requiredTools"]
 
         data["serviceType"] = service_type
         data["serviceCategory"] = service_category
         data["requiredTools"] = required_tools
 
-    # Step 2: Smart matching if no candidates provided
+      
     final_candidates = candidate_workers_input
     if not final_candidates:
         best_workers = get_best_workers_for_job(service_type, service_category, required_tools, top_k=5)
@@ -1054,7 +1216,7 @@ def create_booking():
     if not final_candidates:
         return jsonify({"error": f"No workers found for Canonical Work: {service_type} in category: {service_category}. Try simplifying your description or checking worker profiles."}), 404
 
-    # Step 3: Create Booking Record and Worker Requests
+      
     try:
         date_str = data["date"]
         start_hour = int(data["startHour"])
@@ -1063,7 +1225,6 @@ def create_booking():
         hours = end_hour - start_hour
 
         dt_obj = datetime.strptime(date_str, "%Y-%m-%d")
-        # Use timezone.utc explicitly for Firestore Timestamp compatibility
         appt_dt = dt_obj.replace(hour=start_hour, minute=0, second=0, tzinfo=timezone.utc)
 
         booking_ref = db.collection(COL_BOOKINGS).document()
@@ -1099,7 +1260,6 @@ def create_booking():
         batch.set(booking_ref, booking_obj)
 
         for wid in final_candidates:
-            # Fetch worker data to get perHourCharge for message calculation/display
             w_doc_snap = db.collection(COL_WORKERS).document(wid).get()
             w_ph_rate = w_doc_snap.to_dict().get("perHourCharge", 0) if w_doc_snap.exists else 0
 
@@ -1124,7 +1284,7 @@ def create_booking():
                 }
             })
 
-        batch.update(booking_ref, {"status": "b2"}) # Move to "b2" after worker requests are created
+        batch.update(booking_ref, {"status": "b2"})
         batch.commit()
 
         return jsonify({
@@ -1154,22 +1314,18 @@ def worker_accept():
             b_ref.collection("workerRequests").document(wid),
             wid
         )
-        # Success message when a worker accepts
         return jsonify({"ok": True, "message": "1 user request processed"}), 200
     except Exception as e:
         error_msg = str(e)
         print(f"Worker Accept Error: {error_msg}")
 
-        # Check for the specific availability exception
         if "WORKER_NOT_AVAILABLE" in error_msg:
-            # Return the specific error message you requested
             return jsonify({
                 "ok": False,
                 "error": f"Worker {wid} not available for given time try later",
                 "message": "0 user requests processed"
             }), 400
 
-        # Handle other errors (e.g., BOOKING_NOT_FOUND, ALREADY_ASSIGNED)
         return jsonify({"ok": False, "error": error_msg, "message": "Timeout"}), 400
 
 @app.route("/worker-reject", methods=["POST"])
@@ -1190,7 +1346,7 @@ def worker_reject():
         print(f"Worker Reject Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-# --- JOB LIFECYCLE ROUTES ---
+  
 
 @app.route("/generate-start-otp", methods=["POST"])
 @require_secret
@@ -1390,7 +1546,7 @@ def verify_end_otp():
 
         cw_id = None
         try:
-            for doc in db.collection(COL_CW).where("canonicalWork", "==", cw_name).limit(1).stream():
+            for doc in db.collection(COL_CW).where(filter=FieldFilter("canonicalWork", "==", cw_name)).limit(1).stream():
                 cw_id = doc.id
                 break
         except Exception as e:
@@ -1415,7 +1571,7 @@ def verify_end_otp():
             if cw_name in skill_map:
                 curr_score = skill_map[cw_name].get("score", 0)
 
-                # Boost score slightly, allowing the submit-rating transaction to correct it to an average
+                  
                 new_score = min(5.0, curr_score + 0.05)
 
                 w_ref.update({
@@ -1423,7 +1579,7 @@ def verify_end_otp():
                     f"cwSkillScore.{cw_name}.jobsCompleted": firestore.Increment(1)
                 })
             else:
-                # Initialize the score for a newly completed job type
+                  
                 w_ref.update({
                     f"cwSkillScore.{cw_name}": {"score": 4.0, "jobsCompleted": 1}
                 })
@@ -1479,9 +1635,9 @@ def cancel_booking():
         transaction = db.transaction()
         cancel_booking_in_transaction(transaction, booking_ref, user_id, reason)
 
-        # Cleanup pending requests
+          
         reqs = booking_ref.collection("workerRequests")\
-            .where("status", "==", "pending").stream()
+            .where(filter=FieldFilter("status", "==", "pending")).stream()
         batch = db.batch()
         has_updates = False
         now_ts_val = now_ts()
@@ -1550,13 +1706,13 @@ def expire_requests():
     now_ts_val = now_ts()
 
     try:
-        q = db.collection(COL_BOOKINGS).where("status", "==", "b2").stream()
+        q = db.collection(COL_BOOKINGS).where(filter=FieldFilter("status", "==", "b2")).stream()
         updated_count = 0
         batch = db.batch()
 
         for b in q:
             reqs = b.reference.collection("workerRequests")\
-                .where("status", "==", "pending").stream()
+                .where(filter=FieldFilter("status", "==", "pending")).stream()
 
             for r in reqs:
                 r_data = r.to_dict()
@@ -1577,23 +1733,12 @@ def expire_requests():
         print(f"Expire Requests Error: {e}")
         return jsonify({"error": str(e)}), 500
 
-# --- HEALTH CHECK ---
+  
 
 @app.route("/", methods=["GET"])
 def health_check():
     return jsonify({
-        "status": "healthy",
-        "service": "Kaarya Unified Backend",
-        "version": "3.0-Corrected",
-        "features": [
-            "AI-powered skill extraction (Hierarchical)",
-            "Global Canonical Work Registry (COL_CW)",
-            "Verified Worker Onboarding (predict-multi)",
-            "Smart worker matching (Hierarchical Vector Fallback)",
-            "Vector-based job classification (Pinecone)",
-            "Transactional updates",
-            "OTP-based job lifecycle"
-        ]
+        "status": "healthy"
     }), 200
 
 if __name__ == "__main__":

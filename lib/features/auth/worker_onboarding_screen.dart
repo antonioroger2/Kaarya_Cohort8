@@ -123,7 +123,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
         Uri.parse('$baseUrl/cw/predict-multi'), 
         headers: {"Content-Type": "application/json", "x-secret-key": secretKey},
         body: jsonEncode({"text": _descController.text}),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -205,7 +205,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
           "profileDescription": _descController.text.trim(), 
           "verifiedSkills": finalSkillsPayload 
         }),
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         if (!mounted) return;

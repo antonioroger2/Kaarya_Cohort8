@@ -44,7 +44,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     );
   }
 
-  // --- API CALLS (Unchanged) ---
   Future<void> _attemptStartJob(Map<String, dynamic> bookingData) async {
     final date = (bookingData['bookingDate'] as Timestamp).toDate();
     final startHour = bookingData['startHour'] ?? 0;
@@ -170,20 +169,16 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 Future<void> _launchMaps(String address, double? lat, double? lng) async {
     final Uri uri;
     
-    // 1. Priority: Use GPS Coordinates (11.11...) if they exist
     if (lat != null && lng != null) {
-      // syntax: https://www.google.com/maps/search/?api=1&query=lat,lng
+
       uri = Uri.parse("https://www.google.com/maps/dir/?api=1&destination=$lat,$lng");
     } 
-    // 2. Fallback: Use the Address String
     else {
-      return; // Cannot launch without coordinates
+      return; 
     }
 
     try {
-      // Try to launch in an external app (Google Maps)
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
-        // Fallback to platform default (Browser)
         await launchUrl(uri, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
@@ -197,7 +192,6 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
 
 
   String _getStatusText(String code) {
-    // Normalized to lowercase for safety
     final c = code.toLowerCase();
     switch (c) {
       case 'b1': return 'Request Sent';
@@ -226,12 +220,10 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
 
             final bookingData = snapshot.data!.data() as Map<String, dynamic>;
             
-            // --- CRITICAL FIX: Handle Lowercase Statuses ---
             final status = (bookingData['status'] ?? '').toString();
             final isCancelled = status.toLowerCase() == 'cancelled';
             final isRejected = status.toLowerCase() == 'rejected';
 
-            // If Cancelled or Rejected, STOP HERE. Do not show details.
             if (isCancelled || isRejected) {
                return Center(
                  child: Padding(
@@ -263,7 +255,6 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
                );
             }
 
-            // --- Only fetch profile if booking is ACTIVE ---
             final counterpartId = widget.isWorker ? bookingData['userId'] : bookingData['workerId'];
             final counterpartCollection = widget.isWorker ? 'users' : 'workers';
 
@@ -284,7 +275,6 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
   }
 
   Widget _buildContent(BuildContext context, Map<String, dynamic> bookingData, Map<String, dynamic>? profileData) {
-    // ... Data parsing logic remains the same ...
     final dateStr = bookingData['date'] as String?;
     final startHour = bookingData['startHour'] ?? 0;
     final endHour = bookingData['endHour'] ?? 0;
@@ -303,7 +293,7 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
     final timeRangeText = "${DateFormat.jm().format(startDateTime)} - ${DateFormat.jm().format(endDateTime)}";
 
     final now = DateTime.now();
-    // Safe check using lowercase
+
     final statusLower = statusCode.toString().toLowerCase();
     final bool isJobActive = statusLower != 'cancelled' && statusLower != 'rejected' && statusLower != 'e3';
     
@@ -321,7 +311,7 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
     final displayAddress = landmark.isNotEmpty ? "$address\n(Landmark: $landmark)" : address;
 
     Color statusColor;
-    // Updated switch to handle lowercase
+
     switch (statusLower) {
       case 'e3': statusColor = Colors.green; break;
       case 'cancelled': case 'rejected': statusColor = Colors.red; break;
@@ -355,7 +345,7 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
           ),
           const SizedBox(height: 16),
 
-          // Service Details
+ 
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16), 
@@ -384,7 +374,6 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
-                        // Pass the parsed lat/lng variables here
                         onPressed: () => _launchMaps(address, lat, lng),
                         icon: const Icon(Icons.map),
                         label: const Text("Navigate via Google Maps"),
@@ -402,7 +391,7 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
           ),
           const SizedBox(height: 16),
 
-          // Counterpart Information
+
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16), 

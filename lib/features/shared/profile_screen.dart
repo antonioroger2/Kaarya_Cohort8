@@ -1,9 +1,35 @@
-// lib/features/shared/profile_screen.dart
+
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../core/theme.dart'; // Ensure this path is correct
+import 'package:intl/intl.dart'; 
+import '../../core/theme.dart'; 
+
+
+class DoodleBackground extends StatelessWidget {
+  final Widget child;
+  const DoodleBackground({super.key, required this.child});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFFF8F9FA), 
+      child: child,
+    );
+  }
+}
+
+
+class AppColors {
+  static const Color primaryTeal = Color(0xFF008080); 
+  static const Color secondaryTeal = Color(0xFF4DB6AC); 
+  static const Color primaryBackground = Color(0xFFF8F9FA);
+  static const Color secondaryBackground = Colors.white;
+  static const Color errorRed = Color(0xFFD32F2F);
+  static const Color successGreen = Color(0xFF388E3C);
+}
+
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -18,28 +44,29 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
-  bool _isLoading = false; // Added loading state for save operation
+  bool _isLoading = false; 
 
-  // Controllers for general user/worker fields
+  
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
   final _altPhoneController = TextEditingController();
   final _pinController = TextEditingController();
 
-  // Controllers for worker specific fields
+  
   final _descriptionController = TextEditingController();
   final _hourlyRateController = TextEditingController();
   final _idNumberController = TextEditingController();
 
   String _idType = 'Aadhar';
   int _experience = 0;
-  
-  // NOTE: We no longer use _workCategories for editing.
-  // Editing worker skills will require a dedicated "Skill Management" screen
-  // that uses the /cw/predict-multi and /complete-signup endpoints. 
-  // For the profile screen, we only display the stored CW data.
-  
+
   final ScrollController _scrollController = ScrollController();
+
+  
+  String _formatCurrency(num val) {
+    final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    return formatter.format(val);
+  }
 
   @override
   void dispose() {
@@ -54,17 +81,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  // --- Data Loading ---
+  
   void _loadUserData(Map<String, dynamic> data) {
-    // Basic user fields
+    
     _nameController.text = data['name'] ?? '';
     _phoneController.text = data['phone'] ?? '';
     _altPhoneController.text = data['altPhone'] ?? '';
     _pinController.text = data['pin'] ?? '';
 
-    // Worker fields
+    
     if (widget.isWorker) {
-      // NOTE: 'profileDescription' is typically set during the initial AI-driven signup
       _descriptionController.text = data['profileDescription'] ?? ''; 
       _hourlyRateController.text = (data['perHourCharge'] ?? 0).toString();
       _idNumberController.text = data['idDetails']?['number'] ?? '';
@@ -73,10 +99,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // --- Save Logic ---
+  
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all required fields correctly'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please fill all required fields correctly'), backgroundColor: Colors.orange.shade600));
       return;
     }
 
@@ -92,8 +118,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (widget.isWorker) {
       final hourlyRate = int.tryParse(_hourlyRateController.text);
 
-      if (hourlyRate == null || hourlyRate <= 0) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a valid hourly rate greater than 0'), backgroundColor: Colors.red));
+      if (hourlyRate == null || hourlyRate < 50) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please enter a valid hourly rate (min ${_formatCurrency(50)})'), backgroundColor: AppColors.errorRed));
         return;
       }
 
@@ -105,8 +131,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'type': _idType,
           'number': _idNumberController.text.trim()
         },
-        // IMPORTANT: We do NOT send CW data or tools here to prevent accidental overwrites
-        // of complex nested data structures managed by the AI/Booking system.
       });
     }
 
@@ -119,18 +143,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await FirebaseFirestore.instance.collection(collection).doc(widget.userId).set(dataToSave, SetOptions(merge: true));
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully!'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profile saved successfully!'), backgroundColor: AppColors.successGreen));
 
     } catch (e) {
       if (!mounted) return;
       setState(() => _isEditing = true); 
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save profile: $e'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to save profile: ${e.toString().split(':').last}'), backgroundColor: AppColors.errorRed));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
   
-  // --- UI Builder Methods ---
+
+  InputDecoration _inputDecoration(String label, IconData icon, {bool enabled = true}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: enabled ? Colors.black54 : Colors.grey.shade600),
+      prefixIcon: Icon(icon, color: enabled ? AppColors.primaryTeal.withOpacity(0.7) : Colors.grey.shade400),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: AppColors.primaryTeal, width: 2),
+      ),
+      filled: true,
+      fillColor: enabled ? AppColors.secondaryBackground : Colors.grey.shade100,
+    );
+  }
 
   Widget _buildTextField({
     required TextEditingController controller, 
@@ -139,23 +185,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     bool required = true, 
     int? maxLines, 
     int? maxLength, 
-    TextInputType? keyboardType
+    TextInputType? keyboardType,
+    List<TextInputFormatter>? inputFormatters,
+    String? helperText
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: TextFormField(
         controller: controller,
         enabled: _isEditing,
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: Icon(icon),
-          border: const OutlineInputBorder(),
-          filled: !_isEditing,
-          fillColor: Colors.grey[200],
+        decoration: _inputDecoration(label, icon, enabled: _isEditing).copyWith(
+          helperText: helperText,
+          counterText: maxLength != null ? null : "",
         ),
         maxLines: maxLines ?? 1,
         maxLength: maxLength,
         keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         validator: (value) {
           if (required && (value == null || value.isEmpty)) {
             return 'This field is required';
@@ -168,19 +214,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildIdDetailsSection() {
     return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('ID Verification', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-            const SizedBox(height: 8),
+            const Text(
+              'Government ID Verification',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal),
+            ),
+            const Divider(height: 20),
+            
+            
             DropdownButtonFormField<String>(
               value: _idType,
               items: ['Aadhar', 'PAN', 'Voter ID', 'Drivers License'].map((String value) {
                 return DropdownMenuItem<String>(
                   value: value,
-                  child: Text(value),
+                  child: Text(value, style: const TextStyle(color: Colors.black87)),
                 );
               }).toList(),
               onChanged: _isEditing ? (newValue) {
@@ -188,17 +242,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _idType = newValue!;
                 });
               } : null,
-              decoration: const InputDecoration(
-                labelText: 'ID Type',
-                border: OutlineInputBorder(),
+              decoration: _inputDecoration('ID Type', Icons.list_alt, enabled: _isEditing).copyWith(
+                filled: !_isEditing,
+                fillColor: _isEditing ? AppColors.secondaryBackground : Colors.grey.shade100,
               ),
             ),
             const SizedBox(height: 16),
-            _buildTextField(controller: _idNumberController, label: 'ID Number', icon: Icons.badge),
-            if (_idType == 'Drivers License' && widget.isWorker)
-              const Padding(
-                padding: EdgeInsets.only(top: 8.0),
-                child: Text('Note: Driver\'s License is mandatory for driving-related jobs.', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+            
+            
+            _buildTextField(
+              controller: _idNumberController, 
+              label: 'ID Number', 
+              icon: Icons.badge,
+              keyboardType: TextInputType.text,
+            ),
+            
+            if (_idType == 'Drivers License' && widget.isWorker && _isEditing)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Text(
+                  'Note: Driver\'s License is mandatory for driving-related jobs.', 
+                  style: TextStyle(color: AppColors.errorRed, fontSize: 12),
+                ),
               )
           ],
         ),
@@ -208,89 +273,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildExperienceSection() {
     return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Professional Experience', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal)),
-            const SizedBox(height: 16),
+            const Text(
+              'Professional Experience', 
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal)
+            ),
+            const Divider(height: 20),
+            
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.teal.withOpacity(0.1), Colors.cyan.withOpacity(0.1)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: AppColors.secondaryTeal.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.teal.withOpacity(0.2)),
+                border: Border.all(color: AppColors.secondaryTeal.withOpacity(0.3)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  if (_isEditing)
-                    IconButton(
-                      onPressed: () => setState(() {
-                        if (_experience > 0) _experience--;
-                      }),
-                      icon: const Icon(Icons.remove_circle, color: Colors.red),
-                      tooltip: 'Decrease experience',
-                    ),
+                  
+                  _isEditing ? IconButton(
+                    onPressed: () => setState(() {
+                      if (_experience > 0) _experience--;
+                    }),
+                    icon: Icon(Icons.remove_circle_outline, color: AppColors.errorRed),
+                    tooltip: 'Decrease experience',
+                  ) : const SizedBox(width: 48),
+
                   Expanded(
                     child: Column(
                       children: [
                         Text(
                           '$_experience',
                           style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.teal,
+                            fontSize: 40,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.primaryTeal,
                           ),
                         ),
                         Text(
                           _experience == 1 ? 'Year' : 'Years',
                           style: TextStyle(
                             fontSize: 16,
-                            color: Colors.teal.withOpacity(0.7),
+                            color: AppColors.primaryTeal.withOpacity(0.8),
                             fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const Text(
-                          'of Experience',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  if (_isEditing)
-                    IconButton(
-                      onPressed: () => setState(() => _experience++),
-                      icon: const Icon(Icons.add_circle, color: Colors.green),
-                      tooltip: 'Increase experience',
-                    ),
+                  
+                  
+                  _isEditing ? IconButton(
+                    onPressed: () => setState(() => _experience++),
+                    icon: Icon(Icons.add_circle_outline, color: AppColors.successGreen),
+                    tooltip: 'Increase experience',
+                  ) : const SizedBox(width: 48),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
+                color: AppColors.primaryTeal.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.green.withOpacity(0.3)),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.trending_up, color: Colors.green, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.info_outline, color: AppColors.primaryTeal, size: 20),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'More experience = Higher rates! Clients prefer experienced professionals.',
-                      style: TextStyle(fontSize: 12, color: Colors.green),
+                      'This field helps clients determine your credibility and rates.',
+                      style: TextStyle(fontSize: 12, color: AppColors.primaryTeal),
                     ),
                   ),
                 ],
@@ -302,56 +364,77 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- NEW WORKER SKILL DISPLAY SECTION (from first snippet) ---
+  
   Widget _buildWorkerSkillsSection(Map<String, dynamic> data) {
-    // This displays the skill hierarchy (Category -> Task) and stats (rating, jobs)
-    // based on the nested structure populated during the AI-driven signup.
-    final cwData = data['cwSkillScore'] as Map<String, dynamic>? ?? {}; 
-    
-    // Attempt to restructure cwSkillScore if it's flat, or rely on the existence of cw_data (if populated)
-    // NOTE: Since the new backend uses cwSkillScore for stats and the old used cw_data 
-    // for structure, we assume the backend still populates cw_data or use a simpler flat display
-    
-    // For now, we will use the cw_data structure from the backend, which is assumed
-    // to contain Category -> Task Slug -> Task Details for display hierarchy.
     final displayCwData = data['cw_data'] as Map<String, dynamic>? ?? {}; 
-
+    
+    
     if (displayCwData.isEmpty) {
-        return const Text("No canonical skills configured.");
+        return Card(
+           elevation: 4,
+           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+           child: Padding(
+             padding: const EdgeInsets.all(16.0),
+             child: Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+                 const Text('Skills & Tools', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal)),
+                 const Divider(height: 20),
+                 Center(
+                   child: Text(
+                     "No detailed skill data available. Please re-run the AI analysis during onboarding.",
+                     textAlign: TextAlign.center,
+                     style: TextStyle(color: Colors.grey.shade600),
+                   ),
+                 ),
+               ],
+             ),
+           ),
+        );
     }
     
     return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: 16),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Skill Hierarchy & Performance', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal)),
-            const SizedBox(height: 12),
+            const Text('Verified Skills & Tools', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal)),
+            const Divider(height: 20),
             
-            // Iterate over Categories (e.g., Plumber, Electrician)
+            
             ...displayCwData.entries.map((categoryEntry) {
               final category = categoryEntry.key;
               final tasks = categoryEntry.value as Map<String, dynamic>;
 
               return Card(
+                elevation: 1,
                 margin: const EdgeInsets.only(top: 8),
                 color: Colors.teal.shade50,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 child: ExpansionTile(
-                  title: Text(category, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal)),
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                  leading: Icon(Icons.category, color: AppColors.primaryTeal.withOpacity(0.8)),
+                  title: Text(category, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
                   children: tasks.entries.map((taskEntry) {
                     final taskName = taskEntry.value['name'] ?? 'Task';
                     final taskData = taskEntry.value as Map<String, dynamic>;
                     
-                    // Fetch rating/stats from the task data structure
-                    final tools = List<String>.from(taskData['tools'] ?? []);
-                    final rating = taskData['rating'] ?? 5.0;
+                    final tools = List<String>.from(taskData['myTools'] ?? []); 
+                    final rating = (taskData['rating'] ?? 5.0).toDouble();
                     final totalWorks = taskData['total_works'] ?? 0;
                     
                     return ListTile(
                       dense: true,
-                      title: Text(taskName),
-                      subtitle: Text("Tools: ${tools.join(', ')}"),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                      title: Text(taskName, style: const TextStyle(fontWeight: FontWeight.w500)),
+                      subtitle: Text(
+                        "Tools: ${tools.isEmpty ? 'None Selected' : tools.join(', ')}",
+                        style: TextStyle(fontSize: 12, color: tools.isEmpty ? AppColors.errorRed : Colors.grey.shade600),
+                      ),
                       trailing: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -359,8 +442,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.star, size: 14, color: Colors.amber),
-                              Text(rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold)),
+                              Icon(Icons.star, size: 14, color: Colors.amber.shade600),
+                              Text(rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
                             ],
                           ),
                           Text('$totalWorks jobs', style: const TextStyle(fontSize: 10, color: Colors.grey)),
@@ -377,23 +460,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // --- Main Build Method ---
+  
 
   @override
   Widget build(BuildContext context) {
     final collection = widget.isWorker ? 'workers' : 'users';
 
     return Scaffold(
+      backgroundColor: AppColors.primaryBackground,
       appBar: AppBar(
-        title: Text(widget.isWorker ? 'My Worker Profile' : 'My Profile'),
+        title: Text(
+          widget.isWorker ? 'My Worker Profile' : 'My Profile',
+          style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+        ),
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: AppColors.secondaryBackground,
         actions: [
           if (!_isEditing)
             IconButton(
-              icon: const Icon(Icons.edit),
+              icon: const Icon(Icons.edit, color: AppColors.primaryTeal),
+              tooltip: 'Edit Profile',
               onPressed: () => setState(() => _isEditing = true),
             ),
           IconButton(
-            icon: const Icon(Icons.logout),
+            icon: const Icon(Icons.logout, color: AppColors.errorRed),
             tooltip: 'Logout',
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
@@ -412,6 +503,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               child: Text(
                 "Profile data not found.\nPlease try restarting the app.",
                 textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
               ),
             );
           }
@@ -424,54 +516,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           return Form(
             key: _formKey,
-            child: DoodleBackground( // Assuming DoodleBackground is a custom widget
+            child: DoodleBackground( 
               child: SingleChildScrollView(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // --- General User Fields ---
+                    
+                    const Text(
+                      'Personal Details',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.black87),
+                    ),
+                    const Divider(height: 25),
+                    
                     _buildTextField(controller: _nameController, label: 'Full Name', icon: Icons.person),
                     _buildTextField(controller: _phoneController, label: 'Primary Phone', icon: Icons.phone, keyboardType: TextInputType.phone),
-                    _buildTextField(controller: _altPhoneController, label: 'Alternate Phone', icon: Icons.phone_android, required: false, keyboardType: TextInputType.phone),
-                    _buildTextField(controller: _pinController, label: '6-Digit Pincode', icon: Icons.location_on, keyboardType: TextInputType.number),
+                    _buildTextField(
+                      controller: _altPhoneController, 
+                      label: 'Alternate Phone', 
+                      icon: Icons.phone_android, 
+                      required: false, 
+                      keyboardType: TextInputType.phone
+                    ),
+                    _buildTextField(
+                      controller: _pinController, 
+                      label: 'Pincode', 
+                      icon: Icons.location_on, 
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    ),
 
-                    // --- Worker Specific Fields ---
+                    
                     if (widget.isWorker) ...[
-                      const SizedBox(height: 16),
-                      const Divider(),
-                      const SizedBox(height: 16),
-                      Text('Worker Details', style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 16),
-                      _buildTextField(controller: _descriptionController, label: 'Profile Description (max 200 chars)', icon: Icons.description, maxLines: 3, maxLength: 200),
-                      _buildTextField(controller: _hourlyRateController, label: 'Hourly Rate (₹)', icon: Icons.price_change, keyboardType: TextInputType.number),
-                      _buildIdDetailsSection(),
-                      const SizedBox(height: 16),
-                      _buildExperienceSection(),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Professional Information', 
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22, color: Colors.black87)
+                      ),
+                      const Divider(height: 25),
                       
-                      // NEW SKILL DISPLAY SECTION
+                      
+                      _buildTextField(
+                        controller: _descriptionController, 
+                        label: 'Profile Description (Max 200 chars)', 
+                        icon: Icons.description, 
+                        maxLines: 4, 
+                        maxLength: 200,
+                        helperText: 'A summary for client viewing. Edit the full description using the AI tool.',
+                      ),
+                      
+                      
+                      _buildTextField(
+                        controller: _hourlyRateController, 
+                        label: 'Hourly Rate (Min 50)', 
+                        icon: Icons.price_change, 
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        helperText: _formatCurrency(int.tryParse(_hourlyRateController.text) ?? 0),
+                      ),
+                      
+                      _buildIdDetailsSection(),
+                      _buildExperienceSection(),
+                      
+                      
                       _buildWorkerSkillsSection(data),
                     ],
 
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
 
-                    // --- Save/Cancel Button ---
+                    
                     if (_isEditing)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           TextButton(
                             onPressed: () => setState(() => _isEditing = false),
-                            child: const Text('Cancel'),
+                            child: Text('Cancel', style: TextStyle(color: AppColors.errorRed)),
                           ),
-                          const SizedBox(width: 8),
-                          ElevatedButton(
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
                             onPressed: _isLoading ? null : _saveProfile,
-                            child: _isLoading 
+                            icon: _isLoading 
                               ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : const Text('Save Profile'),
+                              : const Icon(Icons.check_circle_outline),
+                            label: Text('Save Changes'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryTeal,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+                            ),
                           ),
                         ],
                       )

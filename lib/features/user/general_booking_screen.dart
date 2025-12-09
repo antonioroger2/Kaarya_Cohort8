@@ -1,4 +1,3 @@
-// lib/features/user/general_booking_screen.dart
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -27,26 +26,21 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
   final double _defaultHourlyRate = 400.0; 
   final int workingStartHour = 0; 
   final int workingEndHour = 24;  
-  final int _minNotesLength = 20; // New minimum length requirement
-
-  // --- State Variables ---
-  DateTime _selectedDate = DateTime.now(); 
+  final int _minNotesLength = 20; 
+    DateTime _selectedDate = DateTime.now(); 
   int? _selectedStartHour; 
   int _hours = 2;
   bool _isLoading = false;
   
-  // Controllers
-  final _notesController = TextEditingController();
+    final _notesController = TextEditingController();
   final _addressController = TextEditingController(); 
   final _landmarkController = TextEditingController(); 
   final _rateController = TextEditingController();
 
   Map<String, dynamic>? _userData;
-  // Assume all 24 hours are theoretically available for a general request
-  Set<int> _availableGeneralSlots = List.generate(24, (index) => index).toSet(); 
+    Set<int> _availableGeneralSlots = List.generate(24, (index) => index).toSet(); 
   
-  // --- GPS & TA Variables ---
-  Position? _currentPosition;
+    Position? _currentPosition;
   String? _nominatimAddress;
   bool _isGettingLocation = false;
   final int _baseTA = 38; 
@@ -67,8 +61,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
     super.dispose();
   }
 
-  // --- Data & Helpers ---
-
+  
   Future<void> _fetchUserData() async {
     if (widget.userId.isEmpty) return;
     try {
@@ -86,8 +79,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
     }
   }
 
-  // Uses local 24-hour availability to determine valid start slots
-  List<int> _getAvailableStartSlots() {
+    List<int> _getAvailableStartSlots() {
     List<int> slots = [];
     final now = DateTime.now();
     final min_BookingTime = now.add(const Duration(hours: 1));
@@ -134,10 +126,9 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
         _currentPosition = position;
       });
 
-      // Simplified: Directly try to get address, ignore if it fails
-      try {
-         final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&zoom=18&addressdetails=1');
-         final response = await http.get(url, headers: {'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)'});
+            try {
+         final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&addressdetails=1');        
+          final response = await http.get(url, headers: {'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)'});
          if (response.statusCode == 200) {
             final decoded = json.decode(response.body);
             setState(() { _nominatimAddress = decoded['display_name']; });
@@ -167,15 +158,12 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
     return DateFormat.j().format(dt); 
   }
 
-  // --- Submit Booking (Multi-Request Flow) ---
-  Future<void> _confirmBooking() async {
-    // Validation
-    if (_selectedStartHour == null) {
+    Future<void> _confirmBooking() async {
+        if (_selectedStartHour == null) {
        _showError('Please select a Time slot.');
       return;
     }
-    // CRITICAL: Enforce min length for vector search
-    if (_notesController.text.trim().length < _minNotesLength) {
+        if (_notesController.text.trim().length < _minNotesLength) {
        _showError('Please describe your job in more detail (min $_minNotesLength characters) for accurate matching.');
       return;
     }
@@ -203,14 +191,12 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
       final calculatedWage = (currentHourlyRate * _hours).toInt();
       final jobDescription = _notesController.text.trim();
 
-      // --- PAYLOAD CONSTRUCTION ---
-      final bookingPayload = {
+            final bookingPayload = {
         'userId': currentUser.uid,
         'userPhone': userPhone,
         'userName': userName, 
         
-        // CRITICAL: Empty candidateWorkers list triggers backend's smart matching
-        'candidateWorkers': [], 
+                'candidateWorkers': [], 
 
         'userInfo': {'name': userName, 'phone': userPhone, 'email': _userData?['email'] ?? ''},
 
@@ -220,9 +206,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
         'wage': calculatedWage,
         'ta': _baseTA, 
         
-        // CRITICAL: Send the full text as both serviceType (for matching) and notes
-        // serviceCategory is intentionally generic or omitted as the backend will derive it from the text.
-        'serviceType': jobDescription, 
+                        'serviceType': jobDescription, 
         'serviceCategory': "General", 
         
         'location': {
@@ -237,8 +221,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
         'notes': jobDescription,
       };
 
-      // Use /create-booking endpoint (multi-request flow)
-      final response = await ApiClient.post('/create-booking', bookingPayload);
+            final response = await ApiClient.post('/create-booking', bookingPayload);
       
       if (response['ok'] == true) {
         if (!mounted) return;
@@ -282,11 +265,9 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // --- Job Description (used for vector match) ---
-            _buildSectionTitle('Detailed Job Description'),
+                        _buildSectionTitle('Detailed Job Description'),
             
-            // Job Description (used for vector match)
-            TextField(
+                        TextField(
               controller: _notesController,
               decoration: InputDecoration(
                 hintText: 'Describe your issue (e.g., "My kitchen tap is leaking and needs a new washer.").',
@@ -298,8 +279,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
             ),
             const SizedBox(height: 20),
 
-            // --- Estimated Rate (Informational/Placeholder) ---
-            _buildSectionTitle('Estimated Hourly Rate (for wage calculation)'),
+                        _buildSectionTitle('Estimated Hourly Rate (for wage calculation)'),
             TextFormField(
               controller: _rateController, 
               keyboardType: TextInputType.number, 
@@ -308,8 +288,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
             ),
             const SizedBox(height: 20),
             
-            // --- Location Section ---
-            _buildSectionTitle('Location & Contact'),
+                        _buildSectionTitle('Location & Contact'),
             Row(
               children: [
                 Expanded(
@@ -367,8 +346,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
             ),
             const SizedBox(height: 20),
 
-            // --- Date Picker ---
-            _buildSectionTitle('Date & Time'),
+                        _buildSectionTitle('Date & Time'),
             InkWell(
               onTap: () async {
                 final picked = await showDatePicker(
@@ -379,8 +357,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
                 );
                 if (picked != null) {
                   setState(() => _selectedDate = picked);
-                  // No availability fetch needed for general request
-                }
+                                  }
               },
               child: InputDecorator(
                 decoration: const InputDecoration(
@@ -396,8 +373,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
             ),
             const SizedBox(height: 15),
 
-            // --- Duration ---
-            Row(
+                        Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text("Duration (Hours):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -421,10 +397,8 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
               ],
             ),
 
-            // --- Slots ---
-            const SizedBox(height: 10),
-             // Slot selection logic remains, but it relies on _availableGeneralSlots (all 24 hours)
-              Wrap(
+                        const SizedBox(height: 10),
+                           Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: availableSlots.map((hour) {
@@ -439,8 +413,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
                 }).toList(),
               ),
             
-            // --- Footer (Button) ---
-            const SizedBox(height: 40),
+                        const SizedBox(height: 40),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

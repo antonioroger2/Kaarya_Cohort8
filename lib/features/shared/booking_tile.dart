@@ -152,8 +152,7 @@ class _BookingTileState extends State<BookingTile> {
     }
   }
 
-  // Helper to capitalize service types (e.g. "plumber" -> "Plumber")
-  String _capitalize(String s) {
+    String _capitalize(String s) {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
   }
@@ -176,8 +175,7 @@ class _BookingTileState extends State<BookingTile> {
     final statusText = _getStatusText(_displayStatus);
     final wage = (widget.bookingData['wage'] ?? 0).toInt();
     
-    // Get Service Type (fallback to 'Service' if missing)
-    final rawService = widget.bookingData['serviceType'] ?? 'Service';
+        final rawService = widget.bookingData['serviceType'] ?? 'Service';
     final serviceType = _capitalize(rawService.toString());
 
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
@@ -216,8 +214,7 @@ class _BookingTileState extends State<BookingTile> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: Column(
           children: [
-            // -- Header --
-            Container(
+                        Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(12), topRight: Radius.circular(12)),
@@ -238,24 +235,18 @@ class _BookingTileState extends State<BookingTile> {
               ),
             ),
             
-            // -- Body --
-            Padding(
+                        Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- PROFILE / SERVICE DISPLAY ---
-                  _profileFuture == null 
+                                    _profileFuture == null 
                   ? _buildProfileRow(
-                      // CASE 1: NO WORKER ASSIGNED
-                      // Main Text: "Plumber"
-                      // Sub Text: "Pending Assignment" (Small)
-                      mainText: serviceType,
+                                                                                        mainText: serviceType,
                       subText: 'Pending Assignment', 
                       rating: 0.0,
                       showRating: false,
-                      isPendingState: true, // Flag to style differently
-                    )
+                      isPendingState: true,                     )
                   : FutureBuilder<DocumentSnapshot>(
                       future: _profileFuture,
                       builder: (context, snapshot) {
@@ -283,10 +274,7 @@ class _BookingTileState extends State<BookingTile> {
                         }
 
                         return _buildProfileRow(
-                          // CASE 2: WORKER ASSIGNED
-                          // Main Text: "John Doe"
-                          // Sub Text: "Service Provider"
-                          mainText: displayName,
+                                                                                                        mainText: displayName,
                           subText: subTitle,
                           rating: rating,
                           showRating: !currentUserIsWorker,
@@ -297,8 +285,7 @@ class _BookingTileState extends State<BookingTile> {
                   
                   const Divider(height: 32),
                   
-                  // -- Time and Wage Info --
-                  Row(
+                                    Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Column(
@@ -329,8 +316,7 @@ class _BookingTileState extends State<BookingTile> {
                     ],
                   ),
                   
-                  // -- Buttons --
-                  if (!currentUserIsWorker && (_displayStatus == 'b2' || _displayStatus == 'b1' || _displayStatus == 'a1') && !_isCancelling)
+                                    if (!currentUserIsWorker && (_displayStatus == 'b2' || _displayStatus == 'b1' || _displayStatus == 'a1') && !_isCancelling)
                     Padding(
                       padding: const EdgeInsets.only(top: 20),
                       child: Row(
@@ -361,8 +347,7 @@ class _BookingTileState extends State<BookingTile> {
     );
   }
 
-  // -- Updated Profile Row Helper --
-  Widget _buildProfileRow({
+    Widget _buildProfileRow({
     required String mainText, 
     required String subText, 
     required double rating, 
@@ -371,15 +356,11 @@ class _BookingTileState extends State<BookingTile> {
   }) {
     return Row(
       children: [
-        // Avatar Logic:
-        // If Pending: Show initial of Service (e.g. "P" for Plumber)
-        // If Assigned: Show initial of Name (e.g. "J" for John)
-        CircleAvatar(
+                                CircleAvatar(
           backgroundColor: isPendingState ? Colors.grey.withOpacity(0.2) : Colors.teal.withOpacity(0.1),
           radius: 22,
           child: isPendingState 
-            ? Icon(Icons.search, color: Colors.grey[600], size: 20) // Or use text: Text(mainText[0]...)
-            : Text(
+            ? Icon(Icons.search, color: Colors.grey[600], size: 20)             : Text(
                 mainText.isNotEmpty ? mainText[0].toUpperCase() : '?', 
                 style: const TextStyle(color: Colors.teal, fontWeight: FontWeight.bold, fontSize: 18)
               ),
@@ -389,31 +370,20 @@ class _BookingTileState extends State<BookingTile> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Swap order if Pending? No, User asked for "Plumber" (Main) to be obvious
-              
-              // SUB TEXT (Top line for assigned, Bottom line for pending usually looks better, 
-              // but let's stick to the layout: Role (small) / Name (big).
-              
-              // IF PENDING:
-              // Main: Plumber
-              // Sub: Pending Assignment (Small)
-              
+                            
+                                          
+                                                        
               if (isPendingState) ...[
                 Text(
-                  mainText, // "Plumber"
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                  mainText,                   style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  subText, // "Pending Assignment"
-                  style: TextStyle(color: Colors.orange[800], fontSize: 12, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)
+                  subText,                   style: TextStyle(color: Colors.orange[800], fontSize: 12, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)
                 ),
               ] else ...[
-                // IF ASSIGNED:
-                // Sub: "Service Provider"
-                // Main: "John Doe"
-                 Text(
+                                                                 Text(
                   subText, 
                   style: TextStyle(color: Colors.grey[600], fontSize: 12)
                 ),

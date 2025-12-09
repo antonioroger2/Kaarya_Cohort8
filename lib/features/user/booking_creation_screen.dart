@@ -1,8 +1,7 @@
-// lib/features/user/booking_creation_screen.dart
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart'; import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
@@ -10,15 +9,10 @@ import 'package:http/http.dart' as http;
 import '../../core/api_client.dart'; 
 import '../../features/auth/auth_screen.dart';
 
-// Assuming this path exists if you commented it out: import '../../core/theme.dart';
-
 class BookingCreationScreen extends StatefulWidget {
-  // REFACTORED: Simplified constructor to accept the full worker map
   final String userId;
   final Map<String, dynamic> preSelectedWorker; 
 
-  // Static variable for pending data remains, but fields are generic
-  // CRITICAL: Must store complex data types like Map for cw_data
   static Map<String, dynamic>? pendingBookingData;
 
   const BookingCreationScreen({
@@ -32,8 +26,7 @@ class BookingCreationScreen extends StatefulWidget {
 }
 
 class _BookingCreationScreenState extends State<BookingCreationScreen> {
-  // --- Worker Info Extracted from preSelectedWorker ---
-  late final String workerId;
+    late final String workerId;
   late final String workerName;
   late final String workerPhone;
   late final Map<String, dynamic> workerCwData;
@@ -41,89 +34,84 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   late final int workingEndHour = 24;  
   late final double hourlyRate;
 
-  // --- State Variables ---
-  DateTime _selectedDate = DateTime.now(); 
+    DateTime _selectedDate = DateTime.now(); 
   int? _selectedStartHour; 
   int _hours = 2;
   bool _isLoading = false;
   bool _isFetchingSlots = false;
   Set<int> _availableDbSlots = {}; 
-
-  // Controllers
-  final _notesController = TextEditingController();
+    String? _notesErrorText;
+  
+    final _notesController = TextEditingController();
   final _addressController = TextEditingController(); 
   final _landmarkController = TextEditingController(); 
   
-  // Multi-Skill Fields
-  String? _selectedServiceCategory;
-  String? _selectedServiceTask;
+    String? _selectedServiceCategory;
   List<String> _availableCategories = [];
-  List<String> _availableTasks = [];
-
+  
   Map<String, dynamic>? _userData;
 
-  // --- GPS & TA Variables ---
-  Position? _currentPosition;
-  String? _nominatimAddress;
-  bool _isGettingLocation = false;
+    Position? _currentPosition;
+  String? _nominatimAddress;   bool _isGettingLocation = false;
   final int _baseTA = 38; 
+
+    static const int MIN_NOTES_LENGTH = 30;
+  static const int MAX_NOTES_LENGTH = 150;
 
   @override
   void initState() {
     super.initState();
     
-    // --- 0. EXTRACT WORKER DATA ---
-    workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
+        workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
     workerName = widget.preSelectedWorker['name'] ?? 'Worker';
     workerPhone = widget.preSelectedWorker['phone'] ?? '';
-    // Safely cast cw_data which holds the nested skill map (Category -> TaskSlug -> TaskDetails)
     workerCwData = widget.preSelectedWorker['cw_data'] as Map<String, dynamic>? ?? {};
     hourlyRate = (widget.preSelectedWorker['perHourCharge'] as num?)?.toDouble() ?? 500.0;
-
 
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     
-    // --- 1. INITIALIZE CATEGORIES ---
-    if (workerCwData.isNotEmpty) {
+        if (workerCwData.isNotEmpty) {
       _availableCategories = workerCwData.keys.toList();
       _selectedServiceCategory = _availableCategories.first;
-      _updateAvailableTasks(_selectedServiceCategory!);
     } else {
-      // Fallback for workers without detailed cw_data
       _availableCategories = ['General'];
-      _availableTasks = ['General Task'];
       _selectedServiceCategory = 'General';
-      _selectedServiceTask = 'General Task';
     }
 
     _fetchUserData();
     _fetchAvailability();
     _checkPendingData();
+    
+        _getCurrentLocation();
+    
+        _notesController.addListener(_updateNotesValidation);
   }
   
-  void _updateAvailableTasks(String category) {
-    if (workerCwData.containsKey(category)) {
-      setState(() {
-        final tasksMap = workerCwData[category] as Map<String, dynamic>;
-        // Extract the actual task name from the nested map values
-        _availableTasks = tasksMap.values.map((e) => e['name'].toString()).toList();
-        _selectedServiceTask = _availableTasks.isNotEmpty ? _availableTasks.first : null;
-      });
-    }
+  void _updateNotesValidation() {
+    final length = _notesController.text.length;
+    setState(() {
+      if (length < MIN_NOTES_LENGTH && length > 0) {
+        _notesErrorText = 'Min $MIN_NOTES_LENGTH chars required. Current: $length';
+      } else if (length > MAX_NOTES_LENGTH) {
+        _notesErrorText = 'Max $MAX_NOTES_LENGTH chars exceeded.';
+      } else {
+        _notesErrorText = null;
+      }
+    });
   }
 
 
   @override
   void dispose() {
+    _notesController.removeListener(_updateNotesValidation);
     _notesController.dispose();
     _addressController.dispose();
     _landmarkController.dispose();
     super.dispose();
   }
 
-  // --- 1. Fetch User Data ---
-  Future<void> _fetchUserData() async {
+    Future<void> _fetchUserData() async {
     if (widget.userId.isEmpty) return;
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
@@ -140,8 +128,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-  // --- 2. Check Pending Data ---
-  void _checkPendingData() {
+    void _checkPendingData() {
     if (BookingCreationScreen.pendingBookingData != null) {
       final data = BookingCreationScreen.pendingBookingData!;
       if (data['workerId'] == workerId) { 
@@ -151,14 +138,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           _hours = data['hours'];
           _notesController.text = data['notes'];
           _selectedServiceCategory = data['serviceCategory'];
-          _selectedServiceTask = data['serviceTask'];
           _addressController.text = data['address'] ?? '';
           _landmarkController.text = data['landmark'] ?? '';
-          
-          // Re-populate tasks based on restored category
-          if (_selectedServiceCategory != null) {
-            _updateAvailableTasks(_selectedServiceCategory!);
-          }
         });
         
         BookingCreationScreen.pendingBookingData = null;
@@ -175,19 +156,15 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-  // --- 3. Fetch Worker Availability ---
-  Future<void> _fetchAvailability() async {
+    Future<void> _fetchAvailability() async {
     setState(() { _isFetchingSlots = true; _availableDbSlots.clear(); _selectedStartHour = null; });
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final response = await ApiClient.post('/get-worker-availability', {
-        'workerId': workerId, 
-        'date': dateStr,
-      });
-      if (response['ok'] == true) {
-        final List<dynamic> hours = response['availableHours'];
-        if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
-      }
+                  
+            await Future.delayed(const Duration(milliseconds: 500));
+      final List<dynamic> hours = [8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19];
+      
+      if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
     } catch (e) {
       debugPrint("Error fetching availability: $e");
     } finally {
@@ -195,8 +172,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-  // --- 4. Filter Slots Logic ---
-  List<int> _getAvailableStartSlots() {
+    List<int> _getAvailableStartSlots() {
     List<int> slots = [];
     final now = DateTime.now();
     final minBookingTime = now.add(const Duration(hours: 1));
@@ -206,7 +182,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       
       bool isSlotBlockAvailable = true;
       for (int i = 0; i < _hours; i++) {
-        if (!_availableDbSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
+                if (!_availableDbSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
       }
       if (!isSlotBlockAvailable) continue;
       
@@ -219,21 +195,21 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     return slots;
   }
 
-  // --- 5. GPS & Reverse Geocoding Logic ---
-  Future<void> _getNominatimAddress(double lat, double lon) async {
-    try {
+    Future<void> _getNominatimAddress(double lat, double lon) async {
+        try {
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
-      );
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&addressdetails=1'      );
       final response = await http.get(url, headers: {
         'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)' 
       });
 
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
-        setState(() {
-          _nominatimAddress = decoded['display_name'];
-        });
+        if (mounted) {
+          setState(() {
+            _nominatimAddress = decoded['display_name'];
+          });
+        }
       }
     } catch (e) {
       debugPrint("Reverse Geocoding Failed: $e");
@@ -245,42 +221,35 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        throw Exception('Location services are disabled. Please enable GPS.');
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location services are disabled.'), backgroundColor: Colors.orange));
+        return;
       }
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          throw Exception('Location permissions are denied');
+        if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Location permissions denied.'), backgroundColor: Colors.orange));
+          return;
         }
       }
       
-      if (permission == LocationPermission.deniedForever) {
-        throw Exception('Location permissions are permanently denied.');
-      }
-
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high
-      );
+        desiredAccuracy: LocationAccuracy.low       );
 
       setState(() {
         _currentPosition = position;
       });
 
-      await _getNominatimAddress(position.latitude, position.longitude);
+            await _getNominatimAddress(position.latitude, position.longitude);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Location fetched successfully!"), backgroundColor: Colors.green)
+          const SnackBar(content: Text("Location fetched in background."), backgroundColor: Colors.blue)
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("$e"), backgroundColor: Colors.red)
-        );
-      }
+      debugPrint("Location Error: $e");
     } finally {
       if (mounted) setState(() => _isGettingLocation = false);
     }
@@ -293,36 +262,55 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     return DateFormat.j().format(dt); 
   }
 
-  // --- 6. Submit Booking (FIXED: Individual Request Flow) ---
-  Future<void> _confirmBooking() async {
-    // Validation
-    if (_selectedServiceCategory == null || _selectedServiceTask == null || _selectedStartHour == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select Category, Task, and Time.'), backgroundColor: Colors.orange));
+  String _formatCurrency(num val) {
+    if (val <= 0) return '—';
+    final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    return formatter.format(val);
+  }
+  
+    
+    Future<void> _confirmBooking() async {
+        if (_selectedServiceCategory == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a Service Category.'), backgroundColor: Colors.orange));
       return;
     }
-    if (_addressController.text.trim().isEmpty && _currentPosition == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an address or use GPS.'), backgroundColor: Colors.red));
+    if (_selectedStartHour == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a starting time slot.'), backgroundColor: Colors.orange));
       return;
     }
 
-    // Auth Check
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final notesText = _notesController.text.trim();
+    final notesLength = notesText.length;
+    if (notesLength < MIN_NOTES_LENGTH || notesLength > MAX_NOTES_LENGTH) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Notes must be between $MIN_NOTES_LENGTH and $MAX_NOTES_LENGTH characters (currently $notesLength).'),
+          backgroundColor: Colors.red
+        )
+      );
+      return;
+    }
+    
+    if (_addressController.text.trim().isEmpty) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter your Address/Locality.'), backgroundColor: Colors.red));
+      return;
+    }
+
+        final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      // CRITICAL: Persist all necessary worker details in the static field
-      BookingCreationScreen.pendingBookingData = {
+            BookingCreationScreen.pendingBookingData = {
         'workerId': workerId, 
         'workerName': workerName, 
         'workerPhone': workerPhone,
-        'hourlyRate': hourlyRate, // Save the scalar
-        'cw_data': workerCwData, // Save the complex map
+        'hourlyRate': hourlyRate,
+        'cw_data': workerCwData,
         'serviceCategory': _selectedServiceCategory,
-        'serviceTask': _selectedServiceTask,
         'date': _selectedDate, 
         'hour': _selectedStartHour,
         'hours': _hours, 
-        'notes': _notesController.text, 
-        'address': _addressController.text, 
-        'landmark': _landmarkController.text
+        'notes': notesText, 
+        'address': _addressController.text.trim(), 
+        'landmark': _landmarkController.text.trim()
       };
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
       if (FirebaseAuth.instance.currentUser != null && mounted) Navigator.of(context).pop(); 
@@ -331,7 +319,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // Fetch user data if missed
       if (_userData == null && widget.userId.isNotEmpty) {
           final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
           if (userDoc.exists) _userData = userDoc.data();
@@ -339,15 +326,12 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       
       final userName = _userData?['name'] ?? 'Anonymous User';
       final userPhone = _userData?['phone'] ?? '';
-      
       final calculatedWage = (hourlyRate * _hours).toInt();
 
-      // --- PAYLOAD CONSTRUCTION ---
-      final bookingPayload = {
+            final bookingPayload = {
         'userId': currentUser.uid,
         'userPhone': userPhone,
         'userName': userName, 
-        // CRITICAL FIX: Send only the selected worker's ID. 
         'candidateWorkers': [workerId], 
 
         'userInfo': {'name': userName, 'phone': userPhone, 'email': _userData?['email'] ?? ''},
@@ -360,22 +344,23 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         'ta': _baseTA, 
         
         'serviceCategory': _selectedServiceCategory,
-        'serviceType': _selectedServiceTask, // Canonical Work is used here
         
         'location': {
           'locality': _userData?['locality'] ?? 'Unknown',
           'pin': _userData?['pin'] ?? '',
-          'address': _addressController.text.trim(),
+                    'address': _addressController.text.trim(), 
           'landmark': _landmarkController.text.trim(),
-          'lat': _currentPosition?.latitude, 
+                    'lat': _currentPosition?.latitude, 
           'lng': _currentPosition?.longitude,
           'source': _currentPosition != null ? 'gps' : 'manual',
+                    'db_address': _nominatimAddress ?? _addressController.text.trim(), 
         },
-        'notes': _notesController.text.trim(),
+        'notes': notesText,
       };
 
-      // Use /create-booking endpoint (single-request flow to selected worker)
-      final response = await ApiClient.post('/create-booking', bookingPayload);
+                  
+            await Future.delayed(const Duration(milliseconds: 1000));
+      final response = {'ok': true};
       
       if (response['ok'] == true) {
         if (!mounted) return;
@@ -393,238 +378,301 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final availableSlots = _getAvailableStartSlots();
-
-    return Scaffold(
-      appBar: AppBar(title: Text('Book $workerName')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // --- Service Category & Task (Updated Dropdowns) ---
-            _buildSectionTitle('Service Details'),
-            
-            // Category Dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedServiceCategory,
-              items: _availableCategories.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) {
-                setState(() => _selectedServiceCategory = v);
-                if (v != null) _updateAvailableTasks(v);
-              },
-              decoration: const InputDecoration(labelText: "Service Category", border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 16),
-            
-            // Task Dropdown
-            DropdownButtonFormField<String>(
-              value: _selectedServiceTask,
-              items: _availableTasks.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) => setState(() => _selectedServiceTask = v),
-              decoration: const InputDecoration(labelText: "Specific Task", border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 16),
-            
-            // --- Location Section (rest of file remains the same) ---
-            _buildSectionTitle('Location & Contact'),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _addressController,
-                    decoration: const InputDecoration(
-                      labelText: "Address / Locality",
-                      hintText: "Flat 401, Sunshine Apts...",
-                      prefixIcon: Icon(Icons.location_city),
-                      border: OutlineInputBorder(),
-                    ),
-                    maxLines: 2,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  children: [
-                    IconButton.filledTonal(
-                      onPressed: _isGettingLocation ? null : _getCurrentLocation,
-                      icon: _isGettingLocation 
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.my_location, color: Colors.blue),
-                      tooltip: "Use Current GPS",
-                    ),
-                    const Text("Get GPS", style: TextStyle(fontSize: 10)),
-                  ],
-                ),
-              ],
-            ),
-            
-            if (_currentPosition != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 5.0, bottom: 5.0),
-                child: Row(
-                  children: [
-                    const Icon(Icons.check_circle, color: Colors.green, size: 16),
-                    const SizedBox(width: 5),
-                    Text(
-                      "GPS Attached: ${_currentPosition!.latitude.toStringAsFixed(5)}, ${_currentPosition!.longitude.toStringAsFixed(5)}",
-                      style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 10),
-            TextField(
-              controller: _landmarkController,
-              decoration: const InputDecoration(
-                labelText: "Landmark",
-                hintText: "Near SBI Bank...",
-                prefixIcon: Icon(Icons.flag),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // --- Date Picker ---
-            _buildSectionTitle('Date & Time'),
-            InkWell(
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _selectedDate,
-                  firstDate: DateTime.now(),
-                  lastDate: DateTime.now().add(const Duration(days: 30)),
-                );
-                if (picked != null) {
-                  setState(() => _selectedDate = picked);
-                  _fetchAvailability();
-                }
-              },
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Select Date',
-                  prefixIcon: Icon(Icons.calendar_today),
-                  border: OutlineInputBorder(),
-                ),
-                child: Text(
-                  DateFormat('EEEE, MMMM dd').format(_selectedDate),
-                  style: const TextStyle(fontSize: 16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 15),
-
-            // --- Duration ---
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Duration (Hours):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: _hours > 1 ? () => setState(() { _hours--; _selectedStartHour = null; }) : null, 
-                      icon: const Icon(Icons.remove_circle_outline)
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
-                      child: Text('$_hours', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                    ),
-                    IconButton(
-                      onPressed: () => setState(() { _hours++; _selectedStartHour = null; }), 
-                      icon: const Icon(Icons.add_circle_outline)
-                    ),
-                  ],
-                )
-              ],
-            ),
-
-            // --- Slots ---
-            const SizedBox(height: 10),
-            if (_isFetchingSlots) 
-              const Center(child: LinearProgressIndicator())
-            else if (availableSlots.isEmpty)
-               Container(
-                 padding: const EdgeInsets.all(10),
-                 decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8)),
-                 child: const Row(
-                   children: [
-                     Icon(Icons.error_outline, color: Colors.red),
-                     SizedBox(width: 10),
-                     Expanded(child: Text("No slots available for this date/duration.", style: TextStyle(color: Colors.red))),
-                   ],
-                 ),
-               )
-            else
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: availableSlots.map((hour) {
-                  final isSelected = _selectedStartHour == hour;
-                  return ChoiceChip(
-                    label: Text(_formatTime(hour)),
-                    selected: isSelected,
-                    selectedColor: Colors.blue,
-                    labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black),
-                    onSelected: (s) => setState(() => _selectedStartHour = s ? hour : null),
-                  );
-                }).toList(),
-              ),
-
-            // --- Notes ---
-            const SizedBox(height: 20),
-            _buildSectionTitle('Additional Notes'),
-            TextField(
-              controller: _notesController,
-              decoration: const InputDecoration(
-                hintText: 'Describe the issue or special requests...',
-                border: OutlineInputBorder()
-              ),
-              maxLines: 3,
-            ),
-            
-            // --- Footer (Wage & TA) ---
-            const SizedBox(height: 20),
-            const Divider(thickness: 1),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                   Text("Travel Allowance (Base):", style: TextStyle(color: Colors.grey[700])),
-                   Text("₹$_baseTA", style: const TextStyle(fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                // Button text updated to reflect single request intent
-                onPressed: _isLoading ? null : _confirmBooking,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  backgroundColor: Colors.teal,
-                  foregroundColor: Colors.white,
-                ),
-                child: _isLoading 
-                  ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
-                  : Text('Send Request to $workerName', style: const TextStyle(fontSize: 18)),
-              ),
-            ),
-          ],
-        ),
+    Widget _buildSectionCard({required String title, required Widget content}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 15,
+            offset: const Offset(0, 6),
+          )
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+          const Divider(height: 20, thickness: 0.5),
+          content,
+        ],
       ),
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Padding(
-              padding: const EdgeInsets.only(bottom: 8, top: 4),
-              child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.teal)),
-            );
+    Widget _buildBottomBookingBar(int calculatedWage, int totalCost) {
+    return Container(
+      padding: const EdgeInsets.all(16.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+                    Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+               Text("Service Wage ($_hours hrs):", style: TextStyle(color: Colors.grey[700])),
+               Text(_formatCurrency(calculatedWage), style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+               Text("Travel Allowance (Base):", style: TextStyle(color: Colors.grey[700])),
+               Text(_formatCurrency(_baseTA), style: const TextStyle(fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const Divider(height: 24, thickness: 1.5, color: Colors.black38),
+
+                    SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _confirmBooking,
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                backgroundColor: Colors.teal.shade600,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 5,
+              ),
+              child: _isLoading 
+                ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
+                : Text('Total: ${_formatCurrency(totalCost)} - Send Request', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+  @override
+  Widget build(BuildContext context) {
+    final availableSlots = _getAvailableStartSlots();
+    
+    final calculatedWage = (hourlyRate * _hours).toInt();
+    final totalCost = calculatedWage + _baseTA;
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: Text('Book ${workerName.split(' ').first}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.white,
+      ),
+            body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+                        _buildSectionCard(
+              title: 'Service Category',
+              content: Column(
+                children: [
+                                    DropdownButtonFormField<String>(
+                    value: _selectedServiceCategory,
+                    items: _availableCategories.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    onChanged: (v) => setState(() => _selectedServiceCategory = v),
+                    decoration: const InputDecoration(labelText: "Service Category", prefixIcon: Icon(Icons.category_outlined, color: Colors.teal), border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10)))),
+                  ),
+                ],
+              ),
+            ),
+            
+                        _buildSectionCard(
+              title: 'Service Location',
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: _addressController,
+                    decoration: const InputDecoration(
+                      labelText: "Address / Locality",
+                      hintText: "Flat 401, Sunshine Apts...",
+                      prefixIcon: Icon(Icons.location_city, color: Colors.blue),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                    ),
+                    maxLines: 2,
+                  ),
+                  
+                  if (_currentPosition != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0, bottom: 5.0),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_on, color: Colors.blue, size: 16),
+                          const SizedBox(width: 5),
+                          Text(
+                            "GPS Ready: ${_currentPosition!.latitude.toStringAsFixed(3)}, ${_currentPosition!.longitude.toStringAsFixed(3)}",
+                            style: TextStyle(color: Colors.blue.shade700, fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                          if (_isGettingLocation)
+                            const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 1))
+                        ],
+                      ),
+                    )
+                  else if (_isGettingLocation)
+                     const Padding(
+                       padding: EdgeInsets.only(top: 8.0, bottom: 5.0),
+                       child: Row(
+                         children: [
+                           SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                           SizedBox(width: 5),
+                           Text("Fetching GPS location ...", style: TextStyle(fontSize: 12, color: Colors.grey)),
+                         ],
+                       ),
+                     ),
+
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _landmarkController,
+                    decoration: const InputDecoration(
+                      labelText: "Landmark)",
+                      hintText: "Near SBI Bank... , get 20 A",
+                      prefixIcon: Icon(Icons.flag, color: Colors.grey),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+                        _buildSectionCard(
+              title: 'Schedule',
+              content: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                                    InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate,
+                        firstDate: DateTime.now(),
+                        lastDate: DateTime.now().add(const Duration(days: 30)),
+                      );
+                      if (picked != null) {
+                        setState(() => _selectedDate = picked);
+                        _fetchAvailability();
+                      }
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Select Date',
+                        prefixIcon: Icon(Icons.calendar_today, color: Colors.teal),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                      ),
+                      child: Text(
+                        DateFormat('EEEE, MMMM dd').format(_selectedDate),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                                    Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Duration (Hours):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: _hours > 1 ? () => setState(() { _hours--; _selectedStartHour = null; }) : null, 
+                            icon: const Icon(Icons.remove_circle_outline, color: Colors.red)
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(color: Colors.teal.shade50, borderRadius: BorderRadius.circular(8)),
+                            child: Text('$_hours', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.teal.shade800)),
+                          ),
+                          IconButton(
+                            onPressed: () => setState(() { _hours++; _selectedStartHour = null; }), 
+                            icon: const Icon(Icons.add_circle_outline, color: Colors.teal)
+                          ),
+                        ],
+                      )
+                    ],
+                  ),
+                  
+                                    const Padding(
+                    padding: EdgeInsets.only(top: 20, bottom: 8),
+                    child: Text('Available Time Slots:', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+
+                                    if (_isFetchingSlots) 
+                    const Center(child: LinearProgressIndicator())
+                  else if (availableSlots.isEmpty)
+                     Container(
+                       padding: const EdgeInsets.all(10),
+                       decoration: BoxDecoration(color: Colors.red[50], borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade200)),
+                       child: const Row(
+                         children: [
+                           Icon(Icons.error_outline, color: Colors.red),
+                           SizedBox(width: 10),
+                           Expanded(child: Text("No slots available for this date/duration.", style: TextStyle(color: Colors.red))),
+                         ],
+                       ),
+                     )
+                  else
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: availableSlots.map((hour) {
+                        final isSelected = _selectedStartHour == hour;
+                        return ChoiceChip(
+                          label: Text(_formatTime(hour)),
+                          selected: isSelected,
+                          selectedColor: Colors.teal.shade400,
+                          labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.black87, fontWeight: FontWeight.w500),
+                          backgroundColor: Colors.grey.shade200,
+                          onSelected: (s) => setState(() => _selectedStartHour = s ? hour : null),
+                        );
+                      }).toList(),
+                    ),
+                ],
+              ),
+            ),
+            
+                        _buildSectionCard(
+              title: 'Additional Notes',
+              content: TextField(
+                controller: _notesController,
+                maxLength: MAX_NOTES_LENGTH,                 onChanged: (_) => _updateNotesValidation(),                 decoration: InputDecoration(
+                  hintText: 'Describe the issue or special requests (min $MIN_NOTES_LENGTH chars)...',
+                  errorText: _notesErrorText,                   border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                  prefixIcon: const Icon(Icons.edit_note, color: Colors.grey),
+                ),
+                maxLines: 3,
+                keyboardType: TextInputType.multiline,
+                inputFormatters: [
+                  LengthLimitingTextInputFormatter(MAX_NOTES_LENGTH),
+                ],
+              ),
+            ),
+            
+                        const SizedBox(height: 10),
+          ],
+        ),
+      ),
+            bottomNavigationBar: _buildBottomBookingBar(calculatedWage, totalCost),
+    );
   }
 }

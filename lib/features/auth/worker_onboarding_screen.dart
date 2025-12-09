@@ -1,10 +1,12 @@
-// lib/features/auth/worker_onboarding_screen.dart
+
+
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Needed for input formatters
+import 'package:flutter/services.dart'; 
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart'; 
 
 class WorkerOnboardingScreen extends StatefulWidget {
   final String phoneNumber;
@@ -12,8 +14,8 @@ class WorkerOnboardingScreen extends StatefulWidget {
   final Map<String, dynamic>? baseSignupData;
 
   const WorkerOnboardingScreen({
-    Key? key, 
-    required this.phoneNumber, 
+    Key? key,
+    required this.phoneNumber,
     required this.uid,
     this.baseSignupData,
   }) : super(key: key);
@@ -22,15 +24,26 @@ class WorkerOnboardingScreen extends StatefulWidget {
   State<WorkerOnboardingScreen> createState() => _WorkerOnboardingScreenState();
 }
 
+
+
+class AppColors {
+  static const Color primaryTeal = Color(0xFF008080); 
+  static const Color secondaryTeal = Color(0xFF4DB6AC); 
+  static const Color primaryBackground = Color(0xFFF8F9FA);
+  static const Color secondaryBackground = Colors.white;
+  static const Color errorRed = Color(0xFFD32F2F);
+  static const Color successGreen = Color(0xFF388E3C);
+}
+
 class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
 
-  static const String baseUrl = "https://hawk4aynahtirk.pythonanywhere.com"; 
-  static const String secretKey = "HiFhGDorJRULc1Z"; 
-  
-  // --- Validation Constants ---
-  static const int minDescriptionWords = 60; 
+  static const String baseUrl = "https://hawk4aynahtirk.pythonanywhere.com";
+  static const String secretKey = "HiFhGDorJRULc1Z";
 
-  // --- Controllers & Keys ---
+  
+  static const int minDescriptionWords = 60;
+
+  
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _pinController = TextEditingController();
@@ -39,19 +52,20 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
   final _descController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  
   int _currentStep = 0;
   bool _isLoading = false;
 
-  // --- Multi-Skill Data Structure ---
-  // List of {category, task, cw_id, suggestedTools, aiSuggestedToolsFromProfile}
-  List<Map<String, dynamic>> _detectedSkills = []; 
-  // Map<cw_id, Set<tool_name>>: Stores user's selected canonical tools per skill.
+  
+  
+  List<Map<String, dynamic>> _detectedSkills = [];
+  
   final Map<String, Set<String>> _selectedToolsMap = {};
 
   @override
   void initState() {
     super.initState();
-    // Pre-populate controllers from baseSignupData
+    
     if (widget.baseSignupData != null) {
       _nameController.text = widget.baseSignupData!['name'] ?? '';
       _pinController.text = widget.baseSignupData!['pin'] ?? '';
@@ -59,7 +73,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
       _rateController.text = widget.baseSignupData!['hourlyRate']?.toString() ?? '300';
       _passwordController.text = widget.baseSignupData!['password'] ?? '';
     }
-     // Listener for word count in step 2
+     
     _descController.addListener(_updateWordCount);
   }
 
@@ -75,16 +89,11 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
     super.dispose();
   }
 
-  // --- Helper Methods ---
+  
 
   void _updateWordCount() {
-    final text = _descController.text;
-    // Simple word count: split by spaces, filter empty strings
-    final words = text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
-    // Force rebuild to update word counter text
-    setState(() {
-      // Intentionally empty setState to trigger rebuild for counter visibility
-    });
+    
+    if (mounted) setState(() {});
   }
 
   int get _currentWordCount {
@@ -97,30 +106,36 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
       return 'Professional summary is required.';
     }
     if (_currentWordCount < minDescriptionWords) {
-      return 'Minimum $minDescriptionWords words required. (Current: $_currentWordCount)';
+      return 'Minimum $minDescriptionWords words required.';
     }
     return null;
+  }
+
+  String _formatCurrency(num val) {
+    final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
+    return formatter.format(val);
   }
 
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: AppColors.errorRed),
     );
   }
 
-  // --- API: Predict Skills (Step 1 to Step 2) ---
+  
   Future<void> _analyzeProfile() async {
+    
     if (!_formKey.currentState!.validate() || _validateDescription(_descController.text) != null) {
-       _showError("Please correct the highlighted fields and meet the 60-word minimum.");
+       _showError("Please fill all fields and ensure the description meets the 60-word minimum.");
        return;
     }
-    
+
     setState(() => _isLoading = true);
 
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/cw/predict-multi'), 
+        Uri.parse('$baseUrl/cw/predict-multi'),
         headers: {"Content-Type": "application/json", "x-secret-key": secretKey},
         body: jsonEncode({"text": _descController.text}),
       ).timeout(const Duration(seconds: 120));
@@ -128,65 +143,64 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List<dynamic> rawList = data['predictions'] ?? [];
+
         
-        // --- Data Mapping and Initialization ---
         _detectedSkills.clear();
         _selectedToolsMap.clear();
 
         for (var rawSkill in rawList) {
           final skill = Map<String, dynamic>.from(rawSkill);
           String cwId = skill['cw_id'];
-          // Ensure suggestedTools is treated as List<String>
-          List<String> tools = List<String>.from(skill['suggestedTools'] ?? []); 
-          
+          List<String> tools = List<String>.from(skill['suggestedTools'] ?? []);
+
           _detectedSkills.add(skill);
-          // Initialize selected tools with suggested tools for convenience
+          
           _selectedToolsMap[cwId] = tools.toSet();
         }
-        
+
         if (_detectedSkills.isNotEmpty) {
            setState(() {
-             _currentStep = 2; // Go to Verification if skills are found
+             _currentStep = 1; 
            });
         } else {
-           throw Exception("AI found no distinct skills. Try describing your job more clearly.");
+           throw Exception("AI found no distinct skills. Try describing your services more clearly.");
         }
       } else {
         final errorBody = jsonDecode(response.body);
         throw Exception(errorBody['error'] ?? response.reasonPhrase);
       }
     } catch (e) {
-      _showError("Analysis Error: $e");
+      _showError("Analysis Error: ${e.toString().split(':').last}");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- API: Complete Signup (Step 2 Finish) ---
+  
   Future<void> _completeSignup() async {
     if (_detectedSkills.isEmpty) {
       _showError("Profile analysis failed. Please go back and re-analyze your description.");
       return;
     }
+
     
-    // Check if at least one tool is selected for the ENTIRE profile
     bool hasTools = _selectedToolsMap.values.any((set) => set.isNotEmpty);
     if (!hasTools) {
-       _showError("You must select at least one tool you own across all your skills.");
+       _showError("You must select at least one tool you own across all your verified skills.");
        return;
     }
-    
+
     setState(() => _isLoading = true);
 
-    // Prepare the structured data for the backend
-    List<Map<String, dynamic>> finalSkillsPayload = [];
     
+    List<Map<String, dynamic>> finalSkillsPayload = [];
+
     for (var skill in _detectedSkills) {
       String cwId = skill['cw_id'];
       finalSkillsPayload.add({
         "category": skill['category'],
         "task": skill['task'],
-        "myTools": _selectedToolsMap[cwId]?.toList() ?? [], 
+        "myTools": _selectedToolsMap[cwId]?.toList() ?? [],
       });
     }
 
@@ -197,199 +211,292 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
         body: jsonEncode({
           "phone": widget.phoneNumber,
           "name": _nameController.text.trim(),
-          "password": _passwordController.text, 
+          "password": _passwordController.text,
           "pin": _pinController.text.trim(),
           "locality": _localityController.text.trim(),
           "hourlyRate": int.tryParse(_rateController.text) ?? 300,
           "isWorker": true,
-          "profileDescription": _descController.text.trim(), 
-          "verifiedSkills": finalSkillsPayload 
+          "profileDescription": _descController.text.trim(),
+          "verifiedSkills": finalSkillsPayload
         }),
       ).timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         if (!mounted) return;
+
         
-        // 1. Sign in the newly created user
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: '${widget.phoneNumber}@kaaryaconnect.app',
           password: _passwordController.text,
         );
-        
+
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Signup complete! Welcome!"), backgroundColor: Colors.green));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Signup complete! Welcome!"), backgroundColor: AppColors.successGreen));
+
         
-        // 2. Navigate away
         Navigator.of(context).popUntil((route) => route.isFirst);
-        // Assuming your main app handles redirection based on Auth state.
-        // If not, use pushReplacementNamed:
-        // Navigator.of(context).pushReplacementNamed('/home'); 
       } else {
         final errorBody = jsonDecode(response.body);
         throw Exception(errorBody['error'] ?? 'Signup failed');
       }
     } catch (e) {
-      _showError("Signup Error: $e");
+      _showError("Signup Error: ${e.toString().split(':').last}");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // --- UI Components: Step Builders ---
+  
 
-  Widget _buildStep1BasicInfo() {
-    // Incorporates Step 1 (Basic Info) and Step 2 (Description/Analysis Trigger)
-    
+  Widget _buildHeader(String title, String subtitle, {bool isSubStep = false}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: isSubStep ? 20 : 24,
+            fontWeight: FontWeight.bold,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          subtitle,
+          style: const TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+        const Divider(height: 30, thickness: 1, color: Colors.grey),
+      ],
+    );
+  }
+
+  
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: Colors.black54),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: AppColors.primaryTeal, width: 2),
+      ),
+      prefixIcon: Icon(icon, color: AppColors.primaryTeal.withOpacity(0.7)),
+      filled: true,
+      fillColor: AppColors.secondaryBackground,
+    );
+  }
+
+  Widget _buildStep0BasicInfo() {
     int wordCount = _currentWordCount;
-    final wordCountColor = wordCount >= minDescriptionWords ? Colors.green.shade700 : Colors.red.shade700;
+    final wordCountColor = wordCount >= minDescriptionWords ? AppColors.successGreen : AppColors.errorRed;
 
     return Form(
       key: _formKey,
-      child: ListView( 
-        padding: const EdgeInsets.only(top: 10),
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 0),
         children: [
-          const Text("1. Basic Profile & Rate", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+          _buildHeader(
+            "Worker Profile Setup",
+            "Fill in your details to create your service profile."
+          ),
+
+          
+          Row(
+            children: [
+              Expanded(child: TextFormField(
+                controller: _nameController,
+                decoration: _inputDecoration("Full Name", Icons.person_outline),
+                validator: (v) => v!.isEmpty ? "Required" : null,
+              )),
+              const SizedBox(width: 10),
+              Expanded(child: TextFormField(
+                controller: _passwordController,
+                obscureText: true,
+                decoration: _inputDecoration("Password", Icons.lock_outline),
+                validator: (v) => v!.length < 6 ? "Minimum 6 characters" : null,
+              )),
+            ],
+          ),
           const SizedBox(height: 15),
-          TextFormField(
-            controller: _nameController, 
-            decoration: const InputDecoration(labelText: "Full Name", border: OutlineInputBorder()),
-            validator: (v) => v!.isEmpty ? "Required" : null,
-          ),
-          const SizedBox(height: 10),
-          TextFormField(
-            controller: _passwordController, 
-            obscureText: true, 
-            decoration: const InputDecoration(labelText: "Password (min 6 chars)", border: OutlineInputBorder()),
-            validator: (v) => v!.length < 6 ? "Minimum 6 characters" : null,
-          ),
-          const SizedBox(height: 10),
+
+          
           Row(children: [
             Expanded(child: TextFormField(
-              controller: _pinController, 
-              keyboardType: TextInputType.number, 
+              controller: _pinController,
+              keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               maxLength: 6,
-              decoration: const InputDecoration(labelText: "Pincode", counterText: "", border: OutlineInputBorder()),
+              decoration: _inputDecoration("Pincode", Icons.location_on_outlined).copyWith(
+                counterText: "",
+              ),
               validator: (v) => v!.length != 6 ? "6 digits required" : null,
             )),
             const SizedBox(width: 10),
             Expanded(child: TextFormField(
-              controller: _localityController, 
-              decoration: const InputDecoration(labelText: "Locality", border: OutlineInputBorder()),
+              controller: _localityController,
+              decoration: _inputDecoration("Locality / Area", Icons.place_outlined),
               validator: (v) => v!.isEmpty ? "Required" : null,
             )),
           ]),
-          const SizedBox(height: 10),
+          const SizedBox(height: 15),
+
+          
           TextFormField(
-            controller: _rateController, 
-            keyboardType: TextInputType.number, 
+            controller: _rateController,
+            keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: "Hourly Rate (₹)", border: OutlineInputBorder()),
-            validator: (v) => (int.tryParse(v ?? '0') ?? 0) < 50 ? "Min ₹50" : null,
+            decoration: _inputDecoration("Base Hourly Rate", Icons.currency_rupee).copyWith(
+              prefixText: "",
+            ),
+            validator: (v) => (int.tryParse(v ?? '0') ?? 0) < 50 ? "Minimum ${_formatCurrency(50)}" : null,
           ),
           const SizedBox(height: 30),
 
-          // --- Description Section (Professional Requirement) ---
-          const Text("2. Professional Summary *", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Text("Describe your services in detail (experience, specialty, quality commitment) for accurate job matching. Example: 'I am a highly skilled plumber with 10 years experience focusing on tap repair and water heater installation. My commitment is to ensure quick, clean, and reliable service every time.'"),
+          
+          _buildHeader(
+            "Professional Summary (AI Analysis)",
+            "Write a detailed summary of your services, experience, and tools for AI skill detection.",
+            isSubStep: true,
           ),
+
           TextFormField(
             controller: _descController,
-            maxLines: 5,
+            maxLines: 6,
             decoration: InputDecoration(
-              border: const OutlineInputBorder(), 
-              hintText: "Enter your professional summary...",
-              errorMaxLines: 2,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.primaryTeal, width: 2),
+              ),
+              hintText: "Enter your professional summary (e.g., 'I am a master plumber with 10 years experience. I own a pipe cutter, snake drain machine, and a welding torch...').",
+              errorMaxLines: 3,
             ),
-            // Use local validation method
-            validator: _validateDescription, 
+            validator: _validateDescription,
           ),
           const SizedBox(height: 8),
-          // Word Count Indicator
+
+          
           Align(
             alignment: Alignment.centerRight,
-            child: Text(
-              'Words: $wordCount / $minDescriptionWords minimum',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: wordCountColor,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: wordCountColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Words: $wordCount / $minDescriptionWords required',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: wordCountColor,
+                ),
               ),
             ),
           ),
           const SizedBox(height: 20),
+
+          
           ElevatedButton.icon(
             onPressed: _isLoading ? null : _analyzeProfile,
-            icon: _isLoading 
-              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.auto_awesome),
+            icon: _isLoading
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.psychology_outlined),
             label: Text(_isLoading ? "Analyzing Profile..." : "Analyze & Verify Skills"),
-            style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(double.infinity, 50),
+              backgroundColor: AppColors.primaryTeal,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+            ),
           ),
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
 
-  Widget _buildStep2Verification() {
-    // Skill and tool selection (renamed to Step 2)
+  Widget _buildStep1Verification() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text("2. Verify Detected Skills & Tools", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-            TextButton(
+            _buildHeader(
+              "Tool Confirmation",
+              "Verify your skills and select the tools you own."
+            ),
+            TextButton.icon(
               onPressed: () => setState(() => _currentStep = 0),
-              child: const Text("Edit Description"),
+              icon: Icon(Icons.edit, size: 18, color: AppColors.errorRed),
+              label: Text("Edit Summary", style: TextStyle(color: AppColors.errorRed)),
             )
           ],
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Text("✅ AI detected the following service categories. Confirm they are correct and select ONLY the tools you physically own for each job."),
-        ),
+
+        
         Expanded(
-          // Ensure ListView is correctly constrained by Expanded
           child: ListView.builder(
             itemCount: _detectedSkills.length,
             itemBuilder: (context, index) {
               final skill = _detectedSkills[index];
               final cwId = skill['cw_id'];
-              final tools = List<String>.from(skill['suggestedTools'] ?? []); 
               
+              final tools = (skill['suggestedTools'] as List<dynamic>?)?.map((t) => t.toString()).toSet().toList() ?? [];
+
               return Card(
                 margin: const EdgeInsets.only(bottom: 15),
-                elevation: 3,
+                elevation: 4,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 child: ExpansionTile(
-                  initiallyExpanded: index == 0, 
-                  leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Icon(_getIconForCategory(skill['category']), color: Colors.blue)),
-                  title: Text(skill['task'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(skill['category']),
+                  initiallyExpanded: index == 0,
+                  tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.secondaryTeal.withOpacity(0.1),
+                    child: Icon(_getIconForCategory(skill['category']), color: AppColors.primaryTeal)
+                  ),
+                  title: Text(skill['task'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+                  subtitle: Text(skill['category'], style: const TextStyle(color: Colors.black54)),
                   children: [
+                    const Divider(height: 1, thickness: 1, color: Colors.grey),
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("Select Tools YOU OWN:", style: TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
+                          const Text("Select Tools YOU OWN (Mandatory for service):", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87)),
+                          const SizedBox(height: 10),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
                             children: tools.map((tool) {
-                              // Ensure the key exists before checking/updating
                               if (!_selectedToolsMap.containsKey(cwId)) {
                                 _selectedToolsMap[cwId] = <String>{};
                               }
                               final isSelected = _selectedToolsMap[cwId]!.contains(tool);
                               return FilterChip(
-                                label: Text(tool),
+                                label: Text(tool, style: TextStyle(fontSize: 13, fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal)),
                                 selected: isSelected,
-                                selectedColor: Colors.lightGreen.shade200,
-                                labelStyle: TextStyle(color: isSelected ? Colors.green.shade900 : Colors.black87),
+                                selectedColor: AppColors.secondaryTeal.withOpacity(0.3),
+                                disabledColor: Colors.grey.shade100,
+                                checkmarkColor: AppColors.primaryTeal,
+                                labelStyle: TextStyle(color: isSelected ? AppColors.primaryTeal : Colors.black87),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  side: BorderSide(color: isSelected ? AppColors.secondaryTeal : Colors.grey.shade300)
+                                ),
                                 onSelected: (val) {
                                   setState(() {
                                     if (val) {
@@ -401,7 +508,16 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
                                 },
                               );
                             }).toList(),
-                          )
+                          ),
+                          const SizedBox(height: 10),
+                          if (_selectedToolsMap[cwId]?.isEmpty ?? true)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8.0),
+                              child: Text(
+                                '⚠️ Selecting at least one tool for this skill is strongly recommended.',
+                                style: TextStyle(color: AppColors.errorRed, fontSize: 12),
+                              ),
+                            ),
                         ],
                       ),
                     )
@@ -411,50 +527,88 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
             },
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 15),
+
+        
         ElevatedButton(
           onPressed: _isLoading ? null : _completeSignup,
-          style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50), backgroundColor: Colors.green),
-          child: Text(_isLoading ? "Completing Setup..." : "Confirm & Finish Signup"),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(double.infinity, 50),
+            backgroundColor: AppColors.successGreen,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+          ),
+          child: Text(_isLoading ? "Completing Setup..." : "Confirm & Finish Signup", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
         ),
         const SizedBox(height: 10),
       ],
     );
   }
 
-  // --- Helper: Icon Selection ---
+  
   IconData _getIconForCategory(String category) {
     final lowerCaseCategory = category.toLowerCase();
-    if (lowerCaseCategory.contains("plumb")) return Icons.water_drop;
-    if (lowerCaseCategory.contains("electr")) return Icons.electrical_services;
+    if (lowerCaseCategory.contains("plumb")) return Icons.plumbing;
+    if (lowerCaseCategory.contains("electr")) return Icons.bolt;
     if (lowerCaseCategory.contains("clean")) return Icons.cleaning_services;
-    if (lowerCaseCategory.contains("carpenter")) return Icons.carpenter;
+    if (lowerCaseCategory.contains("carpenter") || lowerCaseCategory.contains("wood")) return Icons.carpenter;
     if (lowerCaseCategory.contains("paint")) return Icons.format_paint;
-    if (lowerCaseCategory.contains("cook")) return Icons.restaurant;
+    if (lowerCaseCategory.contains("cook") || lowerCaseCategory.contains("chef")) return Icons.restaurant;
+    if (lowerCaseCategory.contains("repair") || lowerCaseCategory.contains("handy")) return Icons.handyman;
+    if (lowerCaseCategory.contains("driver")) return Icons.local_shipping;
+    if (lowerCaseCategory.contains("ac")) return Icons.air;
     return Icons.work;
   }
 
-  // --- Main Build Method ---
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Worker Profile Setup")),
+      backgroundColor: AppColors.primaryBackground,
+      appBar: AppBar(
+        title: const Text("Worker Onboarding", style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
+        centerTitle: false,
+        elevation: 0,
+        backgroundColor: AppColors.secondaryBackground,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        // Use a Column/IndexedStack structure that allows Expanded to work correctly
         child: Column(
           children: [
-            if (_currentStep == 0) Expanded(child: _buildStep1BasicInfo()),
-            if (_currentStep == 2) Expanded(child: _buildStep2Verification()),
             
-            // Handle the case when Step 2 analysis fails (no skills detected)
-            if (_currentStep == 1) ...[
-              const Text("Analysis failed, returning to step 1...", style: TextStyle(color: Colors.red)),
-              ElevatedButton(
-                onPressed: () => setState(() => _currentStep = 0),
-                child: const Text("Go Back"),
-              )
-            ]
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  _currentStep == 0 ? "Step 1 of 2: Profile Details" : "Step 2 of 2: Skill Verification",
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.black54),
+                ),
+                Text(
+                  "${_currentStep + 1}/2",
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.primaryTeal),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: _currentStep == 0 ? 0.5 : 1.0,
+              backgroundColor: Colors.grey.shade300,
+              valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primaryTeal),
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            const SizedBox(height: 16),
+
+            
+            Expanded(
+              child: IndexedStack(
+                index: _currentStep,
+                children: [
+                  _buildStep0BasicInfo(), 
+                  _buildStep1Verification(), 
+                ],
+              ),
+            ),
           ],
         )
       ),

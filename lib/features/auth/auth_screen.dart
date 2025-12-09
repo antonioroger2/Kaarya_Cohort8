@@ -1,4 +1,3 @@
-// lib/features/auth/auth_screen.dart
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -8,11 +7,37 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
-// NEW IMPORT: Required for the multi-step worker flow
 import 'worker_onboarding_screen.dart'; 
 
 const String API_BASE_URL = "https://hawk4aynahtirk.pythonanywhere.com"; 
 const String API_SECRET = "HiFhGDorJRULc1Z"; 
+
+const Color _primaryTeal = Color(0xFF00695C);
+const Color _primaryBlue = Color(0xFF1E88E5); 
+const Color _darkText = Color(0xFF333333); 
+const Color _lightGrey = Color(0xFFEEEEEE);
+
+InputDecoration _proInputDecoration(String label, IconData icon) {
+  return InputDecoration(
+    labelText: label,
+    prefixIcon: Icon(icon, color: Colors.grey.shade600),
+    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(color: _primaryTeal, width: 2),
+    ),
+    filled: true,
+    fillColor: Colors.white,
+  );
+}
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -149,30 +174,55 @@ class _AuthScreenState extends State<AuthScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text("Verify Phone"),
+        title: const Text("Verify Phone", style: TextStyle(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
               Text("Enter the 6-digit code sent to +91 $phone"),
               const SizedBox(height: 16),
-              TextField(controller: _otpController, keyboardType: TextInputType.number, maxLength: 6, decoration: const InputDecoration(labelText: "OTP Code", counterText: "")),
+
+              TextFormField(
+                controller: _otpController, 
+                keyboardType: TextInputType.number, 
+                maxLength: 6, 
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 20, letterSpacing: 6, fontWeight: FontWeight.bold, color: _primaryTeal),
+                decoration: _proInputDecoration('OTP Code', Icons.lock_clock_outlined).copyWith(
+                  counterText: "", 
+                  prefixIcon: null, 
+                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Colors.green, width: 2), 
+                  ),
+                ),
+              ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-          // Renamed button text to indicate the split flow
-          ElevatedButton(onPressed: () { Navigator.pop(ctx); _verifyOtpAndCreateAccount(phone, _otpController.text.trim()); }, child: Text(_isWorker ? "Verify & Continue" : "Verify & Sign Up"))
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.red))),
+          ElevatedButton(
+            onPressed: () { 
+              Navigator.pop(ctx); 
+              _verifyOtpAndCreateAccount(phone, _otpController.text.trim()); 
+            }, 
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green.shade600, 
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(_isWorker ? "Verify & Continue" : "Verify & Sign Up")
+          )
         ],
       ),
     );
   }
 
-  // MODIFIED: This function now handles the branching logic for User vs Worker
   Future<void> _verifyOtpAndCreateAccount(String phone, String code) async {
     if (code.length != 6) { _showError("OTP must be 6 digits"); return; }
     setState(() => _isLoading = true);
     
-    // 1. Verify OTP with backend API
     try {
       final response = await http.post(
         Uri.parse('$API_BASE_URL/verify-otp-log'), 
@@ -185,15 +235,13 @@ class _AuthScreenState extends State<AuthScreen> {
         throw Exception(body['error'] ?? 'Invalid OTP');
       }
 
-      // 2. OTP SUCCESS: Decide the next step
       if (_isWorker) {
-        // WORKER FLOW: Navigate to AI Onboarding Screen
         final Map<String, dynamic> signupData = {
           'password': _passwordController.text.trim(),
           'name': _nameController.text.trim(),
           'pin': _pinController.text.trim(),
           'locality': _selectedLocality ?? '',
-          'hourlyRate': '300', // Default rate
+          'hourlyRate': '300', 
         };
 
         if (mounted) {
@@ -202,13 +250,12 @@ class _AuthScreenState extends State<AuthScreen> {
               builder: (context) => WorkerOnboardingScreen(
                 phoneNumber: phone,
                 uid: phone, 
-                baseSignupData: signupData, // Pass collected data
+                baseSignupData: signupData,
               ),
             ),
           );
         }
       } else {
-        // USER FLOW: Complete registration directly
         await _completeUserSignup(phone);
       }
     } catch (e) { 
@@ -218,7 +265,6 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  // RENAMED & MODIFIED: Only handles the final user registration API call
   Future<void> _completeUserSignup(String phone) async {
     try {
       final payload = {
@@ -227,7 +273,7 @@ class _AuthScreenState extends State<AuthScreen> {
         'name': _nameController.text.trim(),
         'pin': _pinController.text.trim(),
         'locality': _selectedLocality ?? '',
-        'isWorker': false, // Explicitly false for this path
+        'isWorker': false,
       };
       final response = await http.post(
         Uri.parse('$API_BASE_URL/complete-signup'),
@@ -244,6 +290,7 @@ class _AuthScreenState extends State<AuthScreen> {
 
 
   Future<void> _login() async {
+    setState(() => _isLoading = true);
     try {
       final email = '${_phoneController.text.trim()}@kaaryaconnect.app';
       await FirebaseAuth.instance.signInWithEmailAndPassword(
@@ -258,32 +305,55 @@ class _AuthScreenState extends State<AuthScreen> {
       _showError(e.message ?? 'Login failed');
     } catch (e) {
       _showError("Error: $e");
+    } finally {
+       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+
+    String mainButtonText = _isLoginMode ? 'Login' : 'Sign Up';
+    if (!_isLoginMode && _isWorker) {
+      mainButtonText = 'Continue to Onboarding';
+    }
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Kaarya Connect')),
+      backgroundColor: Colors.white, 
+      appBar: AppBar(
+        title: Text(_isLoginMode ? 'User Login' : 'Create Account', style: const TextStyle(fontWeight: FontWeight.bold, color: _darkText)),
+        backgroundColor: Colors.white,
+        elevation: 0,
+      ),
       body: Center(
         child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             child: Form(
               key: _formKey,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 20),
+                  
                   Text(
                     _isLoginMode ? 'Welcome Back!' : 'Join Our Network',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800, 
+                      color: _primaryTeal,
+                      fontSize: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isLoginMode ? 'Please sign in to access services.' : 'Find trusted local work or hire professionals.',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                   ),
                   const SizedBox(height: 30),
 
                   if (!_isLoginMode)
                     TextFormField(
                       controller: _nameController,
-                      decoration: InputDecoration(labelText: 'Full Name', prefixIcon: const Icon(Icons.person_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+                      decoration: _proInputDecoration('Full Name', Icons.person_outline),
                       validator: (v) => v!.trim().isEmpty ? 'Please enter name' : null,
                     ),
                   if (!_isLoginMode) const SizedBox(height: 16),
@@ -292,7 +362,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     controller: _phoneController,
                     keyboardType: TextInputType.phone,
                     maxLength: 10,
-                    decoration: InputDecoration(labelText: '10-Digit Phone Number', counterText: "", prefixIcon: const Icon(Icons.phone_outlined), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+                    decoration: _proInputDecoration('10-Digit Phone Number', Icons.phone_outlined).copyWith(counterText: ""),
                     validator: (v) => (v == null || RegExp(r'^[0-9]{10}$').hasMatch(v) == false) ? 'Must be 10 digits' : null,
                   ),
                   const SizedBox(height: 16),
@@ -305,10 +375,9 @@ class _AuthScreenState extends State<AuthScreen> {
                             controller: _pinController,
                             keyboardType: TextInputType.number,
                             maxLength: 6,
-                            decoration: InputDecoration(
-                              labelText: '6-Digit Pincode', counterText: "", prefixIcon: const Icon(Icons.location_on_outlined), errorText: _pincodeError, 
-                              suffixIcon: _isLocationLoading ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(height: 10, width: 10, child: CircularProgressIndicator(strokeWidth: 2))) : null,
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            decoration: _proInputDecoration('6-Digit Pincode', Icons.location_on_outlined).copyWith(
+                              counterText: "", errorText: _pincodeError, 
+                              suffixIcon: _isLocationLoading ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(height: 10, width: 10, child: CircularProgressIndicator(strokeWidth: 2, color: _primaryTeal))) : null,
                             ),
                             validator: (v) => (v == null || v.length != 6) ? 'Must be 6 digits' : null,
                             onChanged: (val) {
@@ -317,7 +386,14 @@ class _AuthScreenState extends State<AuthScreen> {
                             },
                           ),
                         ),
-                        IconButton(icon: const Icon(Icons.gps_fixed), onPressed: _isLocationLoading ? null : _detectLocationAndFetchPincode),
+                        const SizedBox(width: 10),
+                        Container(
+                          decoration: BoxDecoration(color: _lightGrey, borderRadius: BorderRadius.circular(12)),
+                          child: IconButton(
+                            icon: const Icon(Icons.gps_fixed, color: _primaryTeal), 
+                            onPressed: _isLocationLoading ? null : _detectLocationAndFetchPincode
+                          ),
+                        ),
                       ],
                     ),
 
@@ -326,18 +402,19 @@ class _AuthScreenState extends State<AuthScreen> {
                       padding: const EdgeInsets.only(top: 16),
                       child: DropdownButtonFormField<String>(
                         value: _selectedLocality,
-                        decoration: InputDecoration(labelText: 'Select Locality', border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+                        decoration: _proInputDecoration('Select Locality', Icons.map_outlined),
                         items: _localities.map((loc) => DropdownMenuItem(value: loc, child: Text(loc))).toList(),
                         onChanged: (val) => setState(() => _selectedLocality = val),
                         validator: (val) => val == null ? 'Required' : null,
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  
+                  if (!_isLoginMode) const SizedBox(height: 16),
 
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
-                    decoration: InputDecoration(labelText: 'Password', prefixIcon: const Icon(Icons.lock_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+                    decoration: _proInputDecoration('Password', Icons.lock_outline),
                     validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
                   ),
 
@@ -345,40 +422,82 @@ class _AuthScreenState extends State<AuthScreen> {
                   if (!_isLoginMode)
                     TextFormField(
                       obscureText: true,
-                      decoration: InputDecoration(labelText: 'Confirm Password', prefixIcon: const Icon(Icons.lock_outline), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8))),
+                      decoration: _proInputDecoration('Confirm Password', Icons.lock_outline),
                       validator: (v) => (v != _passwordController.text) ? 'Passwords do not match' : null,
                     ),
 
                   if (!_isLoginMode) const SizedBox(height: 20),
                   if (!_isLoginMode)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(color: _lightGrey, borderRadius: BorderRadius.circular(12)),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Text('I am a User'),
-                          Switch(value: _isWorker, onChanged: (val) => setState(() => _isWorker = val)),
-                          const Text('I am a Worker'),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _isWorker = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: !_isWorker ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: !_isWorker ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4)] : [],
+                                ),
+                                child: Center(child: Text("I'm a User", style: TextStyle(fontWeight: FontWeight.bold, color: !_isWorker ? _primaryBlue : _darkText.withOpacity(0.6)))),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _isWorker = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _isWorker ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: _isWorker ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4)] : [],
+                                ),
+                                child: Center(child: Text("I'm a Worker", style: TextStyle(fontWeight: FontWeight.bold, color: _isWorker ? _primaryTeal : _darkText.withOpacity(0.6)))),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
+                  
                   const SizedBox(height: 30),
 
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _submitAuthForm,
-                      style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: _isLoginMode ? _primaryBlue : _primaryTeal,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
                       child: _isLoading
                           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Text(_isLoginMode ? 'Login' : 'Sign Up', style: const TextStyle(fontSize: 16)),
+                          : Text(mainButtonText, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                   ),
 
                   TextButton(
-                    onPressed: () => setState(() => _isLoginMode = !_isLoginMode),
-                    child: Text(_isLoginMode ? 'Don\'t have an account? Sign Up' : 'Already have an account? Login'),
+                    onPressed: () => setState(() {
+                      _isLoginMode = !_isLoginMode;
+                      _formKey.currentState?.reset(); 
+                      _pinController.clear();
+                      _localities = [];
+                      _selectedLocality = null;
+                      _pincodeError = null;
+                    }),
+                    child: Text(
+                      _isLoginMode ? 'Don\'t have an account? Sign Up' : 'Already have an account? Login',
+                      style: TextStyle(color: _primaryBlue.withOpacity(0.8), fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),

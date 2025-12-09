@@ -14,9 +14,7 @@ class BookingsScreen extends StatefulWidget {
 class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // false = Ascending (Soonest dates first) 
-  // true = Descending (Furthest dates first)
-  bool _isFurthestFirst = true; 
+      bool _isFurthestFirst = true; 
 
   @override
   void initState() {
@@ -52,14 +50,11 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // Upcoming
-                  _buildBookingsList(['a1', 'w1', 'w2']), 
+                                    _buildBookingsList(['a1', 'w1', 'w2']), 
                   
-                  // Pending
-                  _buildBookingsList(['b1', 'b2']),       
+                                    _buildBookingsList(['b1', 'b2']),       
                   
-                  // History - FIXED: Added lowercase 'cancelled' and 'rejected'
-                  _buildBookingsList(['e3', 'cancelled', 'rejected', 'Cancelled', 'Rejected']), 
+                                    _buildBookingsList(['e3', 'cancelled', 'rejected', 'Cancelled', 'Rejected']), 
                 ],
               ),
             ),
@@ -70,20 +65,16 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
   }
 
   Widget _buildBookingsList(List<String> statuses) {
-    // DEBUG TIP: If data is still missing, change 'appointmentDate' to 'createdAt' 
-    // temporarily to see if the field is missing on your docs.
-    
+            
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('bookings')
           .where('userId', isEqualTo: widget.userId)
           .where('status', whereIn: statuses)
-          // Ensure your backend is actually saving 'appointmentDate' on creation!
-          .orderBy('appointmentDate', descending: _isFurthestFirst) 
+                    .orderBy('appointmentDate', descending: _isFurthestFirst) 
           .snapshots(),
       builder: (context, snap) {
-        // 1. CHECK FOR INDEX ERRORS
-        if (snap.hasError) {
+                if (snap.hasError) {
           debugPrint("Firestore Error: ${snap.error}");
           return Center(
             child: Padding(
@@ -124,8 +115,7 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
     );
   }
 
-  // ... (Filter Bar and Bottom Sheet code remains exactly the same as your previous snippet)
-  Widget _buildFilterBar() {
+    Widget _buildFilterBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -191,8 +181,7 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
                         showCheckmark: false,
                         onSelected: (val) {
                           setModalState(() => _isFurthestFirst = false);
-                          setState(() {}); // Update parent
-                        },
+                          setState(() {});                         },
                       ),
                       FilterChip(
                         label: const Text("Descending"),
@@ -200,8 +189,7 @@ class _BookingsScreenState extends State<BookingsScreen> with SingleTickerProvid
                         showCheckmark: false,
                         onSelected: (val) {
                           setModalState(() => _isFurthestFirst = true);
-                          setState(() {}); // Update parent
-                        },
+                          setState(() {});                         },
                       ),
                     ],
                   ),

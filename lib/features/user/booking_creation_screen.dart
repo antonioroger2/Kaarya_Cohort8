@@ -1,11 +1,12 @@
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+
 import '../../core/api_client.dart'; 
 import '../../features/auth/auth_screen.dart';
 
@@ -26,7 +27,8 @@ class BookingCreationScreen extends StatefulWidget {
 }
 
 class _BookingCreationScreenState extends State<BookingCreationScreen> {
-    late final String workerId;
+
+  late final String workerId;
   late final String workerName;
   late final String workerPhone;
   late final Map<String, dynamic> workerCwData;
@@ -34,35 +36,42 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   late final int workingEndHour = 24;  
   late final double hourlyRate;
 
-    DateTime _selectedDate = DateTime.now(); 
+  
+  DateTime _selectedDate = DateTime.now(); 
   int? _selectedStartHour; 
   int _hours = 2;
   bool _isLoading = false;
   bool _isFetchingSlots = false;
   Set<int> _availableDbSlots = {}; 
-    String? _notesErrorText;
+  String? _notesErrorText;
   
-    final _notesController = TextEditingController();
+  
+  final _notesController = TextEditingController();
   final _addressController = TextEditingController(); 
   final _landmarkController = TextEditingController(); 
   
-    String? _selectedServiceCategory;
+  
+  String? _selectedServiceCategory;
   List<String> _availableCategories = [];
   
   Map<String, dynamic>? _userData;
 
-    Position? _currentPosition;
-  String? _nominatimAddress;   bool _isGettingLocation = false;
+  
+  Position? _currentPosition;
+  String? _nominatimAddress;   
+  bool _isGettingLocation = false;
   final int _baseTA = 38; 
 
-    static const int MIN_NOTES_LENGTH = 30;
+  
+  static const int MIN_NOTES_LENGTH = 30;
   static const int MAX_NOTES_LENGTH = 150;
 
   @override
   void initState() {
     super.initState();
     
-        workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
+    
+    workerId = widget.preSelectedWorker['uid'] ?? widget.preSelectedWorker['workerId'] ?? '';
     workerName = widget.preSelectedWorker['name'] ?? 'Worker';
     workerPhone = widget.preSelectedWorker['phone'] ?? '';
     workerCwData = widget.preSelectedWorker['cw_data'] as Map<String, dynamic>? ?? {};
@@ -71,7 +80,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
     
-        if (workerCwData.isNotEmpty) {
+    
+    if (workerCwData.isNotEmpty) {
       _availableCategories = workerCwData.keys.toList();
       _selectedServiceCategory = _availableCategories.first;
     } else {
@@ -80,12 +90,14 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
 
     _fetchUserData();
-    _fetchAvailability();
+    
+    _fetchAvailability(); 
     _checkPendingData();
     
-        _getCurrentLocation();
     
-        _notesController.addListener(_updateNotesValidation);
+    _getCurrentLocation();
+    
+    _notesController.addListener(_updateNotesValidation);
   }
   
   void _updateNotesValidation() {
@@ -111,7 +123,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     super.dispose();
   }
 
-    Future<void> _fetchUserData() async {
+  
+  Future<void> _fetchUserData() async {
     if (widget.userId.isEmpty) return;
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(widget.userId).get();
@@ -128,7 +141,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-    void _checkPendingData() {
+  
+  void _checkPendingData() {
     if (BookingCreationScreen.pendingBookingData != null) {
       final data = BookingCreationScreen.pendingBookingData!;
       if (data['workerId'] == workerId) { 
@@ -138,6 +152,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           _hours = data['hours'];
           _notesController.text = data['notes'];
           _selectedServiceCategory = data['serviceCategory'];
+          
           _addressController.text = data['address'] ?? '';
           _landmarkController.text = data['landmark'] ?? '';
         });
@@ -156,15 +171,29 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-    Future<void> _fetchAvailability() async {
+  
+  Future<void> _fetchAvailability() async {
     setState(() { _isFetchingSlots = true; _availableDbSlots.clear(); _selectedStartHour = null; });
     try {
       final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
                   
-            await Future.delayed(const Duration(milliseconds: 500));
-      final List<dynamic> hours = [8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19];
       
-      if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
+      final response = await ApiClient.post('/get-worker-availability', {
+        'workerId': workerId, 
+        'date': dateStr,
+      });
+      
+      if (response['ok'] == true) {
+        final List<dynamic> hours = response['availableHours'];
+        if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
+      } else {
+         
+         debugPrint("Failed to fetch slots: ${response['error']}");
+         
+         final List<dynamic> hours = [8, 9, 10, 11, 13, 14, 15, 16, 17, 18, 19];
+         if (mounted) setState(() => _availableDbSlots = hours.cast<int>().toSet());
+      }
+      
     } catch (e) {
       debugPrint("Error fetching availability: $e");
     } finally {
@@ -172,7 +201,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-    List<int> _getAvailableStartSlots() {
+  
+  List<int> _getAvailableStartSlots() {
     List<int> slots = [];
     final now = DateTime.now();
     final minBookingTime = now.add(const Duration(hours: 1));
@@ -182,12 +212,14 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       
       bool isSlotBlockAvailable = true;
       for (int i = 0; i < _hours; i++) {
-                if (!_availableDbSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
+        
+        if (!_availableDbSlots.contains(hour + i)) { isSlotBlockAvailable = false; break; }
       }
       if (!isSlotBlockAvailable) continue;
       
       final slotDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour);
       if (DateUtils.isSameDay(_selectedDate, now)) {
+        
         if (slotDateTime.isBefore(minBookingTime)) continue;
       }
       slots.add(hour);
@@ -195,10 +227,12 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     return slots;
   }
 
-    Future<void> _getNominatimAddress(double lat, double lon) async {
-        try {
+  
+  Future<void> _getNominatimAddress(double lat, double lon) async {
+    try {
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&addressdetails=1'      );
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&addressdetails=1'
+      );
       final response = await http.get(url, headers: {
         'User-Agent': 'FlutterWorkerApp/1.0 (contact@example.com)' 
       });
@@ -241,7 +275,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         _currentPosition = position;
       });
 
-            await _getNominatimAddress(position.latitude, position.longitude);
+      await _getNominatimAddress(position.latitude, position.longitude);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -269,8 +303,10 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   }
   
     
-    Future<void> _confirmBooking() async {
-        if (_selectedServiceCategory == null) {
+  
+  Future<void> _confirmBooking() async {
+    
+    if (_selectedServiceCategory == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a Service Category.'), backgroundColor: Colors.orange));
       return;
     }
@@ -296,15 +332,18 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       return;
     }
 
-        final currentUser = FirebaseAuth.instance.currentUser;
+    
+    final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-            BookingCreationScreen.pendingBookingData = {
+      BookingCreationScreen.pendingBookingData = {
         'workerId': workerId, 
         'workerName': workerName, 
         'workerPhone': workerPhone,
         'hourlyRate': hourlyRate,
         'cw_data': workerCwData,
         'serviceCategory': _selectedServiceCategory,
+        
+        'serviceTask': _selectedServiceCategory, 
         'date': _selectedDate, 
         'hour': _selectedStartHour,
         'hours': _hours, 
@@ -328,7 +367,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       final userPhone = _userData?['phone'] ?? '';
       final calculatedWage = (hourlyRate * _hours).toInt();
 
-            final bookingPayload = {
+      
+      final bookingPayload = {
         'userId': currentUser.uid,
         'userPhone': userPhone,
         'userName': userName, 
@@ -345,29 +385,30 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         
         'serviceCategory': _selectedServiceCategory,
         
+        'serviceType': _selectedServiceCategory, 
+        
         'location': {
           'locality': _userData?['locality'] ?? 'Unknown',
           'pin': _userData?['pin'] ?? '',
-                    'address': _addressController.text.trim(), 
+          'address': _addressController.text.trim(), 
           'landmark': _landmarkController.text.trim(),
-                    'lat': _currentPosition?.latitude, 
+          'lat': _currentPosition?.latitude, 
           'lng': _currentPosition?.longitude,
           'source': _currentPosition != null ? 'gps' : 'manual',
-                    'db_address': _nominatimAddress ?? _addressController.text.trim(), 
+          'db_address': _nominatimAddress ?? _addressController.text.trim(), 
         },
         'notes': notesText,
       };
 
-                  
-            await Future.delayed(const Duration(milliseconds: 1000));
-      final response = {'ok': true};
+      
+      final response = await ApiClient.post('/create-booking', bookingPayload);
       
       if (response['ok'] == true) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Request Sent to $workerName!'), backgroundColor: Colors.green));
         Navigator.of(context).pop();
       } else {
-        throw Exception(response['error'] ?? 'Failed');
+        throw Exception(response['error'] ?? 'Failed to create booking.');
       }
     } catch (e) {
       if (mounted) {
@@ -378,7 +419,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     }
   }
 
-    Widget _buildSectionCard({required String title, required Widget content}) {
+  
+  Widget _buildSectionCard({required String title, required Widget content}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -409,7 +451,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     );
   }
 
-    Widget _buildBottomBookingBar(int calculatedWage, int totalCost) {
+  Widget _buildBottomBookingBar(int calculatedWage, int totalCost) {
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: BoxDecoration(
@@ -425,7 +467,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-                    Row(
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
                Text("Service Wage ($_hours hrs):", style: TextStyle(color: Colors.grey[700])),
@@ -442,7 +484,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
           ),
           const Divider(height: 24, thickness: 1.5, color: Colors.black38),
 
-                    SizedBox(
+          SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: _isLoading ? null : _confirmBooking,
@@ -479,16 +521,17 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         elevation: 0,
         backgroundColor: Colors.white,
       ),
-            body: SingleChildScrollView(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-                        _buildSectionCard(
+            
+            _buildSectionCard(
               title: 'Service Category',
               content: Column(
                 children: [
-                                    DropdownButtonFormField<String>(
+                  DropdownButtonFormField<String>(
                     value: _selectedServiceCategory,
                     items: _availableCategories.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                     onChanged: (v) => setState(() => _selectedServiceCategory = v),
@@ -498,7 +541,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
               ),
             ),
             
-                        _buildSectionCard(
+            
+            _buildSectionCard(
               title: 'Service Location',
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -546,8 +590,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                   TextField(
                     controller: _landmarkController,
                     decoration: const InputDecoration(
-                      labelText: "Landmark)",
-                      hintText: "Near SBI Bank... , get 20 A",
+                      labelText: "Landmark",
+                      hintText: "Near SBI Bank...",
                       prefixIcon: Icon(Icons.flag, color: Colors.grey),
                       border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                     ),
@@ -556,12 +600,14 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
               ),
             ),
 
-                        _buildSectionCard(
+            
+            _buildSectionCard(
               title: 'Schedule',
               content: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                                    InkWell(
+                  
+                  InkWell(
                     onTap: () async {
                       final picked = await showDatePicker(
                         context: context,
@@ -588,7 +634,8 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                                    Row(
+                  
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("Duration (Hours):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -612,12 +659,13 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                     ],
                   ),
                   
-                                    const Padding(
+                  
+                  const Padding(
                     padding: EdgeInsets.only(top: 20, bottom: 8),
                     child: Text('Available Time Slots:', style: TextStyle(fontWeight: FontWeight.w600)),
                   ),
 
-                                    if (_isFetchingSlots) 
+                  if (_isFetchingSlots) 
                     const Center(child: LinearProgressIndicator())
                   else if (availableSlots.isEmpty)
                      Container(
@@ -651,13 +699,17 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
               ),
             ),
             
-                        _buildSectionCard(
+            
+            _buildSectionCard(
               title: 'Additional Notes',
               content: TextField(
                 controller: _notesController,
-                maxLength: MAX_NOTES_LENGTH,                 onChanged: (_) => _updateNotesValidation(),                 decoration: InputDecoration(
+                maxLength: MAX_NOTES_LENGTH,                 
+                onChanged: (_) => _updateNotesValidation(),                 
+                decoration: InputDecoration(
                   hintText: 'Describe the issue or special requests (min $MIN_NOTES_LENGTH chars)...',
-                  errorText: _notesErrorText,                   border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                  errorText: _notesErrorText,                   
+                  border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                   prefixIcon: const Icon(Icons.edit_note, color: Colors.grey),
                 ),
                 maxLines: 3,
@@ -668,11 +720,12 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
               ),
             ),
             
-                        const SizedBox(height: 10),
+            const SizedBox(height: 10),
           ],
         ),
       ),
-            bottomNavigationBar: _buildBottomBookingBar(calculatedWage, totalCost),
+      
+      bottomNavigationBar: _buildBottomBookingBar(calculatedWage, totalCost),
     );
   }
 }

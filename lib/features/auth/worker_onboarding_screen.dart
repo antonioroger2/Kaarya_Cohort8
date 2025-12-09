@@ -14,11 +14,11 @@ class WorkerOnboardingScreen extends StatefulWidget {
   final Map<String, dynamic>? baseSignupData;
 
   const WorkerOnboardingScreen({
-    Key? key,
+    super.key,
     required this.phoneNumber,
     required this.uid,
     this.baseSignupData,
-  }) : super(key: key);
+  });
 
   @override
   State<WorkerOnboardingScreen> createState() => _WorkerOnboardingScreenState();
@@ -58,7 +58,7 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
 
   
   
-  List<Map<String, dynamic>> _detectedSkills = [];
+  final List<Map<String, dynamic>> _detectedSkills = [];
   
   final Map<String, Set<String>> _selectedToolsMap = {};
 

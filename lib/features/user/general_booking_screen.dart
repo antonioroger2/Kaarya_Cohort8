@@ -38,7 +38,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
   final _rateController = TextEditingController();
 
   Map<String, dynamic>? _userData;
-    Set<int> _availableGeneralSlots = List.generate(24, (index) => index).toSet(); 
+    final Set<int> _availableGeneralSlots = List.generate(24, (index) => index).toSet(); 
   
     Position? _currentPosition;
   String? _nominatimAddress;
@@ -82,7 +82,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
     List<int> _getAvailableStartSlots() {
     List<int> slots = [];
     final now = DateTime.now();
-    final min_BookingTime = now.add(const Duration(hours: 1));
+    final minBookingtime = now.add(const Duration(hours: 1));
     
     for (int hour = workingStartHour; hour < workingEndHour; hour++) {
       if (hour + _hours > workingEndHour) continue;
@@ -95,7 +95,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
       
       final slotDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, hour);
       if (DateUtils.isSameDay(_selectedDate, now)) {
-        if (slotDateTime.isBefore(min_BookingTime)) continue;
+        if (slotDateTime.isBefore(minBookingtime)) continue;
       }
       slots.add(hour);
     }
@@ -271,7 +271,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
               controller: _notesController,
               decoration: InputDecoration(
                 hintText: 'Describe your issue (e.g., "My kitchen tap is leaking and needs a new washer.").',
-                labelText: 'Job Description (Min ${_minNotesLength} chars)',
+                labelText: 'Job Description (Min $_minNotesLength chars)',
                 prefixIcon: const Icon(Icons.description),
                 border: const OutlineInputBorder()
               ),

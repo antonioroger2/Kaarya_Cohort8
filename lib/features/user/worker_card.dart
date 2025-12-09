@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
 import '../../features/user/booking_creation_screen.dart';
-import '../auth/auth_screen.dart'; import 'worker_profile_view_screen.dart';
+import 'worker_profile_view_screen.dart';
 
 class WorkerCard extends StatelessWidget {
   final Map<String, dynamic> worker;

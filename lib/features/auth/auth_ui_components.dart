@@ -77,7 +77,7 @@ class _AnimatedGradientBackgroundState
               stops: const [0.0, 0.8],
             ),
           ),
-          child: DoodleBackground(child: widget.child!),
+          child: DoodleBackground(child: widget.child),
         );
       },
       child: widget.child,

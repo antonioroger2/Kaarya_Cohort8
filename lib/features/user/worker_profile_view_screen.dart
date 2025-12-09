@@ -76,11 +76,9 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
     return Colors.orange.shade700;
   }
 
-  /**
-   * Safely formats date strings/objects, handling Firebase Timestamp string format
-   * (e.g., "Timestamp(seconds=1765253659, nanoseconds=764000000)")
-   * which causes a FormatException with DateTime.parse().
-   */
+  /// Safely formats date strings/objects, handling Firebase Timestamp string format
+  /// (e.g., "Timestamp(seconds=1765253659, nanoseconds=764000000)")
+  /// which causes a FormatException with DateTime.parse().
   String _formatDate(dynamic dateValue) {
     if (dateValue == null) return '—';
 
@@ -426,7 +424,7 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
                   final k = entry.key.replaceAll('_', ' ').split(' ').map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '').join(' ');
                   final v = (entry.value is Map) ? Map<String, dynamic>.from(entry.value) : <String, dynamic>{};
                   final charge = v['perHourCharge'] as num?;
-                  final effectiveCharge = (charge ?? fallbackRateNum) as num;
+                  final effectiveCharge = (charge ?? fallbackRateNum);
                   final chargeStr = (effectiveCharge > 0) ? '${_formatCurrency(effectiveCharge)}/hr' : 'Rate TBD';
 
                   return Padding(

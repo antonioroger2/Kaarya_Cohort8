@@ -26,7 +26,7 @@ void main() async {
 }
 
 class KaaryaConnectApp extends StatelessWidget {
-  const KaaryaConnectApp({Key? key}) : super(key: key);
+  const KaaryaConnectApp({super.key});
 
   @override
   Widget build(BuildContext context) {

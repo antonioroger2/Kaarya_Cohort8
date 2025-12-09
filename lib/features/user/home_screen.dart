@@ -616,10 +616,12 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        if (mounted) setState(() {
+        if (mounted) {
+          setState(() {
           _locationName = 'GPS Off';
           _userPin = '';
         });
+        }
         return;
       }
 
@@ -627,10 +629,12 @@ class _HomeScreenState extends State<HomeScreen> {
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied) {
-          if (mounted) setState(() {
+          if (mounted) {
+            setState(() {
             _locationName = 'Permission Denied';
             _userPin = '';
           });
+          }
           return;
         }
       }

@@ -33,6 +33,20 @@ PINECONE_EMBED_URL = "https://api.pinecone.io/embed"
 HOUR_OFFSET = 0
 SLOT_COUNT = 24
 FULL_MASK = (1 << SLOT_COUNT) - 1
+
+# --- NOTIFICATION SERVICE CONFIGURATION ---
+# Twilio SMS Configuration
+TWILIO_ACCOUNT_SID = os.environ.get("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.environ.get("TWILIO_PHONE_NUMBER")
+
+# Exotel IVR Configuration
+EXOTEL_API_KEY = os.environ.get("EXOTEL_API_KEY")
+EXOTEL_API_TOKEN = os.environ.get("EXOTEL_API_TOKEN")
+EXOTEL_SID = os.environ.get("EXOTEL_SID")
+EXOTEL_CALLER_ID = os.environ.get("EXOTEL_CALLER_ID")
+EXOTEL_APP_ID = os.environ.get("EXOTEL_APP_ID")
+
 headers_llm = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
 headers_pinecone = {
     "Api-Key": PINECONE_API_KEY,

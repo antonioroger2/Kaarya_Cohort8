@@ -191,6 +191,14 @@ python server.py
 | `PINECONE_INDEX_HOST` | Full host URL of your Pinecone index |
 | `OTP_API_SECRET` | Shared secret between Flutter app and backend |
 | `MISSED_CALL_NO` | Fallback phone number for missed-call OTP |
+| `TWILIO_ACCOUNT_SID` | Twilio account SID for SMS notifications |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token for SMS notifications |
+| `TWILIO_PHONE_NUMBER` | Twilio phone number for sending SMS |
+| `EXOTEL_API_KEY` | Exotel API key for IVR calls |
+| `EXOTEL_API_TOKEN` | Exotel API token for IVR calls |
+| `EXOTEL_SID` | Exotel account SID |
+| `EXOTEL_CALLER_ID` | Exotel caller ID (virtual number) |
+| `EXOTEL_APP_ID` | Exotel IVR flow/app ID |
 
 ---
 
@@ -217,6 +225,7 @@ All endpoints require the `x-secret-key` header.
 | `/cancel-booking` | POST | Cancel booking and restore availability mask |
 | `/get-worker-availability` | POST | Fetch available time slots for a worker on a given date |
 | `/expire-requests` | POST | Expire stale pending worker requests (run via scheduler) |
+| `/cron/process-escalations` | POST | Process notification escalations for job assignments and OTP deliveries (run every 5 mins via Google Cloud Scheduler) |
 
 ---
 

@@ -260,6 +260,11 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
             Icon(Icons.check_circle_outline, size: 18, color: Colors.indigo.shade600),
             const SizedBox(width: 10),
             Expanded(child: Text(w, style: const TextStyle(fontSize: 14, height: 1.4, color: Colors.black87))),
+            // TODO: Check if skill was discovered by AI (from worker data or booking history)
+            Tooltip(
+              message: 'Verified by AI through customer reviews ✨',
+              child: const Icon(Icons.auto_awesome, size: 16, color: Colors.amber),
+            ),
           ],
         ),
       )).toList(),

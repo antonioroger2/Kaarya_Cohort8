@@ -60,10 +60,34 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   Position? _currentPosition;
   String? _nominatimAddress;   
   bool _isGettingLocation = false;
-  final int _baseTA = 38; 
+  int _dynamicTA = 38; // Will be calculated based on distance
 
-  
-  static const int MIN_NOTES_LENGTH = 30;
+  // Dynamic Threshold Logic based on the nature of the job
+  double _workerDistanceKm = 0.0;
+  bool _showDistanceWarning = false;
+  double _jobDistanceThreshold = 10.0; // Default
+  int _dynamicTA = 38; // Will be calculated based on distance
+
+  // Dynamic Threshold Logic based on the nature of the job
+  double _getThresholdForJob(String? category) {
+    if (category == null) return 10.0;
+    final cat = category.toLowerCase();
+    
+    // Highly localized jobs (High flight risk if far)
+    if (cat.contains('clean') || cat.contains('cook') || cat.contains('maid') || cat.contains('sweep')) {
+      return 10.0; 
+    }
+    // Standard trades (Moderate distance acceptable)
+    if (cat.contains('plumb') || cat.contains('electric') || cat.contains('carpenter') || cat.contains('mason')) {
+      return 20.0;
+    }
+    // Specialists / Consultants (Can travel far or "fly in")
+    if (cat.contains('special') || cat.contains('consult') || cat.contains('tech')) {
+      return 500.0; 
+    }
+    
+    return 15.0; // Fallback default
+  }
   static const int MAX_NOTES_LENGTH = 150;
 
   @override
@@ -276,6 +300,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       });
 
       await _getNominatimAddress(position.latitude, position.longitude);
+      _calculateDistanceAndTA(position.latitude, position.longitude); // Calculate distance and TA
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -286,6 +311,61 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       debugPrint("Location Error: $e");
     } finally {
       if (mounted) setState(() => _isGettingLocation = false);
+    }
+  }
+
+  // Fetch Lat/Long from Pincode using data.gov.in API
+  Future<void> _fetchLatLongFromPincode(String pincode) async {
+    if (pincode.length != 6) return;
+    setState(() => _isGettingLocation = true);
+    
+    try {
+      // Using your provided API details
+      final url = Uri.parse('https://api.data.gov.in/resource/6176ee09-3d56-4a3b-8115-21841576b2f6?api-key=579b464db66ec23bdd000001cdd3946e44ce4aad7209ff7b23ac571b&format=json&filters[pincode]=$pincode');
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['records'] != null && data['records'].isNotEmpty) {
+          // Assume API returns lat/lon in the records (adjust keys based on actual API response)
+          final record = data['records'][0]; 
+          final lat = double.tryParse(record['latitude'].toString()) ?? 0.0;
+          final lng = double.tryParse(record['longitude'].toString()) ?? 0.0;
+
+          if (lat != 0.0 && lng != 0.0) {
+            _calculateDistanceAndTA(lat, lng);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Pincode API Error: $e");
+    } finally {
+      setState(() => _isGettingLocation = false);
+    }
+  }
+
+  // Calculate Distance and trigger liability warning
+  void _calculateDistanceAndTA(double userLat, double userLng) {
+    final workerLat = widget.preSelectedWorker['lat'] as double?;
+    final workerLng = widget.preSelectedWorker['lng'] as double?;
+
+    if (workerLat != null && workerLng != null) {
+      double distanceInMeters = Geolocator.distanceBetween(
+        userLat, userLng, 
+        workerLat, workerLng
+      );
+      
+      setState(() {
+        _workerDistanceKm = distanceInMeters / 1000;
+        _jobDistanceThreshold = _getThresholdForJob(_selectedServiceCategory);
+        
+        // Calculate TA: ₹12 per km
+        int calculatedTA = (_workerDistanceKm * 12.0).round();
+        _dynamicTA = calculatedTA < 30 ? 30 : calculatedTA; // Minimum ₹30 TA
+        
+        // Trigger Warning if distance exceeds the dynamic threshold for this specific job
+        _showDistanceWarning = _workerDistanceKm > _jobDistanceThreshold;
+      });
     }
   }
 
@@ -381,7 +461,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         'startHour': _selectedStartHour!,
         'endHour': _selectedStartHour! + _hours,
         'wage': calculatedWage,
-        'ta': _baseTA, 
+        'ta': _dynamicTA, 
         
         'serviceCategory': _selectedServiceCategory,
         
@@ -479,7 +559,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
                Text("Travel Allowance (Base):", style: TextStyle(color: Colors.grey[700])),
-               Text(_formatCurrency(_baseTA), style: const TextStyle(fontWeight: FontWeight.bold)),
+               Text(_formatCurrency(_dynamicTA), style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           ),
           const Divider(height: 24, thickness: 1.5, color: Colors.black38),
@@ -511,7 +591,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     final availableSlots = _getAvailableStartSlots();
     
     final calculatedWage = (hourlyRate * _hours).toInt();
-    final totalCost = calculatedWage + _baseTA;
+    final totalCost = calculatedWage + _dynamicTA;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -596,6 +676,60 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                       border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                     ),
                   ),
+
+                  // Pincode Field to trigger the API fallback
+                  const SizedBox(height: 10),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: "Pincode (Auto-fetches location)",
+                      prefixIcon: Icon(Icons.pin_drop, color: Colors.blue),
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    onChanged: (val) {
+                      if (val.length == 6) {
+                        _fetchLatLongFromPincode(val); // Trigger API
+                      }
+                    },
+                  ),
+
+                  // ==========================================
+                  // DYNAMIC LIABILITY WARNING BANNER
+                  // ==========================================
+                  if (_showDistanceWarning)
+                    Container(
+                      margin: const EdgeInsets.only(top: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade300, width: 1.5),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "High Distance Liability Warning",
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red.shade900),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "This worker is ${_workerDistanceKm.toStringAsFixed(1)} km away. For a '${_selectedServiceCategory}' job, booking outside $_jobDistanceThreshold km highly increases the risk of delays or cancellation. Kaarya Connect holds no liability for extreme travel times.",
+                                  style: TextStyle(color: Colors.red.shade800, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),

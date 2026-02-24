@@ -42,6 +42,7 @@ dependencies:
   geocoding: ^3.0.0
   http: ^1.2.0
   url_launcher: ^6.3.0
+  flutter_dotenv: ^5.1.0
 
 dependency_overrides:
   firebase_auth_web: 5.8.0

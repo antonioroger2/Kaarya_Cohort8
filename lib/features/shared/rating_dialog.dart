@@ -10,6 +10,13 @@ class RatingDialog extends StatefulWidget {
 
 class _RatingDialogState extends State<RatingDialog> {
   double _rating = 5.0;
+  final TextEditingController _reviewController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reviewController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +45,15 @@ class _RatingDialogState extends State<RatingDialog> {
             '${_rating.toInt()} star${_rating != 1.0 ? 's' : ''}',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _reviewController,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              hintText: 'Describe your experience (optional, but helps improve profiles!)',
+              border: OutlineInputBorder(),
+            ),
+          ),
         ],
       ),
       actions: [
@@ -46,7 +62,10 @@ class _RatingDialogState extends State<RatingDialog> {
           child: const Text('Cancel'),
         ),
         ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(_rating), 
+          onPressed: () => Navigator.of(context).pop({
+            'rating': _rating,
+            'review': _reviewController.text.trim(),
+          }), 
           child: const Text('Submit Rating'),
         ),
       ],

@@ -2,6 +2,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+// TODO: Add firebase_messaging package to pubspec.yaml
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'features/auth/auth_wrapper.dart';
 import 'features/user/user_dashboard.dart'; // Using UserDashboard as it's the wrapper
 import 'features/worker/worker_dashboard.dart';
@@ -10,17 +13,25 @@ import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Firebase with the explicit options (Original block)
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+  
+  // Initialize Firebase with options from .env
   await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "AIzaSyBs9SOI0JzT93aj9QFdvBlq-nKYmb9DRW0",
-      authDomain: "kaarya-ee87f.firebaseapp.com",
-      projectId: "kaarya-ee87f",
-      storageBucket: "kaarya-ee87f.firebasestorage.app",
-      messagingSenderId: "529720186258",
-      appId: "1:529720186258:web:0a355cdd36f64bfc555d4b",
+    options: FirebaseOptions(
+      apiKey: dotenv.env['FIREBASE_API_KEY']!,
+      authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']!,
+      projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+      storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+      messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+      appId: dotenv.env['FIREBASE_APP_ID']!,
     ),
   );
+
+  // Initialize FCM
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  await messaging.requestPermission();
+  // TODO: Handle FCM tokens for backend integration
 
   runApp(const KaaryaConnectApp());
 }

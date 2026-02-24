@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; 
+import 'package:intl/intl.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; 
 
 class WorkerOnboardingScreen extends StatefulWidget {
   final String phoneNumber;
@@ -38,7 +39,7 @@ class AppColors {
 class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
 
   static const String baseUrl = "https://hawk4aynahtirk.pythonanywhere.com";
-  static const String secretKey = "HiFhGDorJRULc1Z";
+  static String get secretKey => dotenv.env['API_SECRET_KEY'] ?? '';
 
   
   static const int minDescriptionWords = 60;

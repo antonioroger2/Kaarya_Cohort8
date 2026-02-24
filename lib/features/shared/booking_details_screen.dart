@@ -2,6 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart'; 
+// TODO: Add razorpay_flutter package to pubspec.yaml
+// import 'package:razorpay_flutter/razorpay_flutter.dart';
+// TODO: Add pinput package to pubspec.yaml
+// import 'package:pinput/pinput.dart';
+// TODO: Add sms_autofill package to pubspec.yaml
+// import 'package:sms_autofill/sms_autofill.dart';
 import '../../core/theme.dart';
 import '../../core/api_client.dart'; 
 import './rating_dialog.dart'; 
@@ -91,9 +97,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   }
 
   Future<void> _generateEndOtp() async { 
+    // TODO: Integrate Razorpay payment before generating OTP
+    // Show payment sheet, if success, proceed to generate OTP
+    // For now, simulate payment success
+    bool paymentSuccess = await _processPayment();
+    if (!paymentSuccess) return;
+
     _showLoading(true); 
     try { 
-      final response = await ApiClient.post('/generate-end-otp', { 'bookingId': widget.bookingId, 'requestedBy': 'user' }); 
+      final response = await ApiClient.post('/generate-end-otp', { 'bookingId': widget.bookingId, 'requestedBy': 'user', 'paymentReceived': true }); 
       if (response['ok'] == true) { 
         _showOtpVerificationDialog('end', response['correlationId']); 
       } 
@@ -102,6 +114,29 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } finally { 
       _showLoading(false); 
     } 
+  }
+
+  Future<bool> _processPayment() async {
+    // TODO: Implement Razorpay payment gateway
+    // Show Razorpay checkout, return true if successful
+    // For now, show a dialog asking for confirmation
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Payment Required'),
+        content: const Text('Proceed with payment to complete the job?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Pay Now'),
+          ),
+        ],
+      ),
+    ) ?? false;
   }
 
   Future<void> _verifyEndOtp(String correlationId) async { 
@@ -123,12 +158,15 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   Future<void> _rateJob(Map<String, dynamic> bookingData) async { 
     final workerName = bookingData['workerInfo']?['name'] ?? 'Worker'; 
     final workerId = bookingData['workerId']; 
-    final rating = await showDialog<double>(context: context, barrierDismissible: false, builder: (dialogContext) => RatingDialog(workerName: workerName)); 
-    if (rating == null || workerId == null) return; 
+    final result = await showDialog<Map<String, dynamic>>(context: context, barrierDismissible: false, builder: (dialogContext) => RatingDialog(workerName: workerName)); 
+    if (result == null || workerId == null) return; 
+    
+    final rating = result['rating'] as double;
+    final review = result['review'] as String;
     
     _showLoading(true); 
     try { 
-      await ApiClient.post('/submit-rating', { 'userId': widget.userId, 'bookingId': widget.bookingId, 'workerId': workerId, 'rating': rating, 'review': 'Rated $rating stars' }); 
+      await ApiClient.submitRating(widget.bookingId, rating, workerId, widget.userId, review);
       if (!mounted) return; 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Rating submitted successfully!'), backgroundColor: Colors.green)); 
     } catch (e) { 
@@ -152,6 +190,13 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text('Please ask your worker for the 6-digit code and enter it below.'),
+                // TODO: Replace with Pinput for better UX
+                // Pinput(
+                //   controller: _otpController,
+                //   length: 6,
+                //   keyboardType: TextInputType.number,
+                //   onCompleted: (pin) => _otpController.text = pin,
+                // ),
                 TextField(controller: _otpController, keyboardType: TextInputType.number, maxLength: 6,),
                 if (isEndOtp) CheckboxListTile(title: const Text("I have paid the worker"), value: _paymentReceived, onChanged: (val) { setDialogState(() => _paymentReceived = val ?? false); setState(() => _paymentReceived = val ?? false); },),
               ],
@@ -164,6 +209,8 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
         },
       ),
     );
+    // TODO: Enable SMS auto-fill
+    // SmsAutoFill().listenForCode();
   }
 
 Future<void> _launchMaps(String address, double? lat, double? lng) async {

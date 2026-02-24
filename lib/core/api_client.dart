@@ -2,14 +2,15 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class ApiClient {
 
   static const String _baseUrl = "https://hawk4aynahtirk.pythonanywhere.com";
 
-  static const String _apiSecret = "HiFhGDorJRULc1Z";
+  static String get _apiSecret => dotenv.env['API_SECRET_KEY'] ?? '';
 
-  static const Map<String, String> _headers = {
+  static Map<String, String> get _headers => {
     "Content-Type": "application/json",
     "x-secret-key": _apiSecret,
   };
@@ -61,6 +62,29 @@ class ApiClient {
       throw ApiException(e.toString());
     }
   }
+
+  // Submit rating with review for Profile Healer AI
+  static Future<void> submitRating(String bookingId, double rating, String workerId, String userId, String reviewText) async {
+    await post('/submit-rating', {
+      "bookingId": bookingId,
+      "rating": rating,
+      "workerId": workerId,
+      "userId": userId,
+      "review": reviewText, // Crucial for AI Profile Healer!
+    });
+  }
+
+  // TODO: Add generateStartOtp method
+  // TODO: Add verifyStartOtp method
+  // TODO: Add generateEndOtp method
+  // TODO: Add verifyEndOtp method
+  // TODO: Add cancelBooking method
+  // TODO: Add getBooking method
+  // TODO: Add getWorkerAvailability method
+  // TODO: Add expireRequests method
+  // TODO: Add createBooking method
+  // TODO: Add workerAccept method
+  // TODO: Add workerReject method
 }
 
 // Custom exception for API errors

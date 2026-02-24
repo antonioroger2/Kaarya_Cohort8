@@ -56,6 +56,7 @@ This repository was originally built for a hackathon, where it placed Top 120 ou
 | LLM | Groq API (Llama 3.1-8b-instant) |
 
 ---
+Escrow-based OTP Job Cycle handshake and an automated Push-to-IVR escalation protocol to ensure trust and safety across diverse network conditions
 
 ## Core AI Systems
 
@@ -129,7 +130,50 @@ All critical state transitions are wrapped in Firestore `@transactional` decorat
 - **Cancel Booking:** Restores the worker's availability mask and cancels all pending worker requests
 - **Submit Rating:** Updates global average rating and canonical-work-specific skill score in a single atomic write
 
-No double-booking. No race conditions. No stale state.
+## TODO: Native Language Support (Hindi & Regional Languages)
+
+**Status:** Planning Phase  
+**Priority:** High  
+**Estimated Effort:** Medium-High
+
+### Objective
+Implement native language support for UI, SMS, and IVR to improve accessibility for workers who may not be fluent in English.
+
+### Technical Requirements
+
+#### 1. Flutter UI Internationalization
+- Add `flutter_localizations` and ARB files for supported languages
+- Implement language detection based on device locale
+- Add language selection in user profile settings
+- Support RTL languages if needed
+
+#### 2. SMS Templates in Native Languages
+- Create translated SMS templates for Hindi and major regional languages
+- Implement language detection based on worker's location/state
+- Handle variable substitution in translated text
+
+#### 3. IVR Voice Prompts in Native Languages
+- Create voice-friendly translations for IVR scripts
+- Ensure proper pronunciation guides for TTS engines
+- Test with actual TTS services
+
+### Supported Languages
+- Hindi (hi) - Primary
+- Tamil (ta) - South India
+- Telugu (te) - South India  
+- Bengali (bn) - East India
+- Gujarati (gu) - West India
+- Marathi (mr) - West India
+- Punjabi (pa) - North India
+
+### Tasks
+- [ ] Set up Flutter internationalization with ARB files
+- [ ] Create translation dictionaries for SMS templates
+- [ ] Implement language detection based on worker location
+- [ ] Add IVR script translations with pronunciation guides
+- [ ] Test TTS quality for each supported language
+- [ ] Add language preference in user/worker profiles
+- [ ] Implement fallback to English for unsupported content
 
 ---
 

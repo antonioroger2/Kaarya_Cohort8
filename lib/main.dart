@@ -10,6 +10,12 @@ import 'features/user/user_dashboard.dart'; // Using UserDashboard as it's the w
 import 'features/worker/worker_dashboard.dart';
 import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
 
+// TODO: Add internationalization (i18n) support for native languages
+// - Add flutter_localizations and intl packages
+// - Create ARB files for Hindi and regional languages
+// - Implement language detection based on device locale
+// - Add language selection in user profile settings
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   

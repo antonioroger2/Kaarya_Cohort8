@@ -11,7 +11,12 @@ COL_VERIFIED = "verified_signups"
 COL_HISTORY = "raw_to_canonical_history"
 COL_CATEGORIES = "main_categories"
 
+# TODO: Add language preference field to worker profiles
+# Schema: preferredLanguage: str (e.g., 'hi', 'ta', 'te', 'en')
+
 # --- SMS TEMPLATES ---
+# TODO: Add native language support (Hindi/Regional) for SMS templates
+# Create functions to detect worker's preferred language and translate templates
 T_JOB_ALERT = ("[{role}] JOB ALERT: Service requested at {locality} on {date}. "
              "Time: {from_time} to {to_time} (approx. {hours} hours) at ₹{wage}. "
              "Notes: {details}. To accept, reply 'ACCEPT' or use the app. Missed call: {missed_call_no} ~ Kaarya")

@@ -142,6 +142,8 @@ def escalate_job_assignment(booking_id: str, worker_id: str, escalation_level: i
 
     elif escalation_level == 3:
         # Level 3: IVR Call
+        # TODO: Add native language support for IVR scripts
+        # Use translate_ivr_script() function to get localized voice prompts
         script = f"Hello. You have a new Kaarya job request. Location is {locality} on {date}. Time: {from_time} to {to_time}. Total payout: {wage} rupees. To accept this job, press 1. To decline, press 2."
         if worker_phone:
             trigger_exotel_ivr_call(worker_phone, script)
@@ -200,6 +202,8 @@ def escalate_otp_delivery(booking_id: str, worker_id: str, otp_type: str, otp_co
 
     elif escalation_level == 3:
         # Level 3: IVR Call
+        # TODO: Add native language support for IVR scripts
+        # Use translate_ivr_script() function to get localized voice prompts
         if otp_type == "start":
             script = f"Hello. Your job start code for {locality} is {otp_code}. I repeat, {otp_code}. Please give this code to the customer to start the job."
         else:

@@ -43,6 +43,10 @@ dependencies:
   http: ^1.2.0
   url_launcher: ^6.3.0
   flutter_dotenv: ^5.1.0
+  # TODO: Add internationalization packages for native language support
+  # flutter_localizations:
+  #   sdk: flutter
+  # Add ARB files for Hindi, Tamil, Telugu, Bengali, etc.
 
 dependency_overrides:
   firebase_auth_web: 5.8.0

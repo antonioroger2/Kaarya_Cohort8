@@ -66,7 +66,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
   double _workerDistanceKm = 0.0;
   bool _showDistanceWarning = false;
   double _jobDistanceThreshold = 10.0; // Default
-  int _dynamicTA = 38; // Will be calculated based on distance
 
   // Dynamic Threshold Logic based on the nature of the job
   double _getThresholdForJob(String? category) {
@@ -88,6 +87,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     
     return 15.0; // Fallback default
   }
+  static const int MIN_NOTES_LENGTH = 10;
   static const int MAX_NOTES_LENGTH = 150;
 
   @override

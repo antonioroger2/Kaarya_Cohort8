@@ -5,6 +5,8 @@ import 'package:firebase_core/firebase_core.dart';
 // TODO: Add firebase_messaging package to pubspec.yaml
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'features/auth/auth_wrapper.dart';
 // Using UserDashboard as it's the wrapper
 import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
@@ -18,12 +20,25 @@ import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Load environment variables
-  await dotenv.load(fileName: ".env");
+  if (kIsWeb) {
+    usePathUrlStrategy();
+  }
   
-  // Initialize Firebase with options from .env
+  // Load environment variables for non-web
+  if (!kIsWeb) {
+    await dotenv.load(fileName: ".env");
+  }
+  
+  // Initialize Firebase
   await Firebase.initializeApp(
-    options: FirebaseOptions(
+    options: kIsWeb ? FirebaseOptions(
+      apiKey: const String.fromEnvironment('FIREBASE_API_KEY'),
+      authDomain: const String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
+      projectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
+      storageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
+      messagingSenderId: const String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
+      appId: const String.fromEnvironment('FIREBASE_APP_ID'),
+    ) : FirebaseOptions(
       apiKey: dotenv.env['FIREBASE_API_KEY']!,
       authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']!,
       projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
@@ -33,10 +48,12 @@ void main() async {
     ),
   );
 
-  // Initialize FCM
-  FirebaseMessaging messaging = FirebaseMessaging.instance;
-  await messaging.requestPermission();
-  // TODO: Handle FCM tokens for backend integration
+  // Initialize FCM for non-web
+  if (!kIsWeb) {
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission();
+    // TODO: Handle FCM tokens for backend integration
+  }
 
   runApp(const KaaryaConnectApp());
 }

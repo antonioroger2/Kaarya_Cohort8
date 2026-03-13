@@ -20,7 +20,7 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (!authSnapshot.hasData) {
-          return const UserDashboard(userId: '');
+          return const AuthScreen();
         }
 
         

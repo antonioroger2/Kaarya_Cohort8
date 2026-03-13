@@ -11,6 +11,17 @@ updates:
     assignees:
       - "antonioroger2"  
 
+  # Flutter SDK version
+  - package-ecosystem: "flutter"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "antonioroger2" 
+    assignees:
+      - "antonioroger2"  
+
   # Python backend dependencies
   - package-ecosystem: "pip"
     directory: "/backend"

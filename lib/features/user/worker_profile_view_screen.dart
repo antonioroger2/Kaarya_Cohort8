@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'booking_creation_screen.dart';
-import '../auth/auth_screen.dart';
 
 class WorkerProfileViewScreen extends StatefulWidget {
   final Map<String, dynamic> worker;
@@ -21,12 +20,9 @@ class WorkerProfileViewScreen extends StatefulWidget {
 }
 
 class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
-  bool _isRefreshing = false;
 
   Future<void> _onRefresh() async {
-    setState(() => _isRefreshing = true);
     await Future.delayed(const Duration(milliseconds: 500));
-    setState(() => _isRefreshing = false);
   }
 
   
@@ -35,13 +31,6 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
 
     final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: val % 1 == 0 ? 0 : 1);
     return formatter.format(val);
-  }
-
-  String _primarySkill(Map<String, dynamic> cwData) {
-    if (cwData.isEmpty) return 'Generalist';
-    String key = cwData.keys.first;
-        key = key.replaceAll('_', ' ');
-    return key.split(' ').map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '').join(' ');
   }
 
   String _avgRate(Map<String, dynamic> cwData, Map<String, dynamic> worker) {
@@ -339,14 +328,12 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
     final Map<String, dynamic> cwData = (worker['cw_data'] as Map?)?.cast<String, dynamic>() ?? {};
     final name = worker['name']?.toString() ?? 'Professional Worker';
     final imageUrl = worker['profilePicUrl']?.toString();
-    final primarySkill = _primarySkill(cwData);
     final avgRate = _avgRate(cwData, worker);
     final double rating = _getAverageRating(worker);
     final completedJobs = (worker['completedBookings'] as num?)?.toInt() ?? 0;
     final tools = (worker['toolsAvailable'] as List?)?.cast<String>() ?? (worker['tools'] as List?)?.cast<String>() ?? [];
     final canonicalWorks = (worker['canonicalWorks'] as List?)?.cast<String>() ?? [];
     final desc = worker['profileDescription']?.toString() ?? worker['description']?.toString() ?? 'Experienced professional ready to help with your needs.';
-        final uid = worker['']?.toString() ?? widget.workerId;
     final isVerified = worker['isVerified'] as bool? ?? false;
     final fallbackRateNum = (worker['perHourCharge'] is num) ? (worker['perHourCharge'] as num) : 0;
     final experience = (worker['experience'] as num?)?.toInt() ?? 0;

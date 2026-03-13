@@ -3,7 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../features/shared/booking_details_screen.dart';
-import '../../features/shared/report_dialog.dart';
 import '../../core/api_client.dart';
 
 class BookingTile extends StatefulWidget {
@@ -120,35 +119,6 @@ class _BookingTileState extends State<BookingTile> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isCancelling = false);
-    }
-  }
-
-  Future<void> _reportIssue(String reportType) async {
-    final reportReason = await showDialog<String>(context: context, builder: (context) => ReportDialog(reportType: reportType));
-    if (reportReason == null || reportReason.isEmpty || _currentBookingId == null) return;
-
-    try {
-      final currentUserId = FirebaseAuth.instance.currentUser!.uid;
-      final reportedUserId = widget.bookingData['workerId'] == currentUserId
-          ? widget.bookingData['userId']
-          : widget.bookingData['workerId'];
-
-      await FirebaseFirestore.instance.collection('reports').add({
-        'bookingId': _currentBookingId,
-        'reporterId': currentUserId,
-        'reportedUserId': reportedUserId,
-        'reportType': reportType,
-        'reason': reportReason,
-        'status': 'Pending',
-        'createdAt': Timestamp.now(),
-        'bookingData': widget.bookingData,
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report submitted.'), backgroundColor: Colors.orange));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
     }
   }
 

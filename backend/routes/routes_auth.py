@@ -103,8 +103,9 @@ def register_auth_routes(app):
                 hourly = 300
 
             if not worker_exists:
-                if not db.collection(COL_VERIFIED).document(phone).get().exists:
-                    return jsonify({"error": "Phone not verified"}), 400
+                # Temporarily disabled OTP verification for development
+                # if not db.collection(COL_VERIFIED).document(phone).get().exists:
+                #     return jsonify({"error": "Phone not verified"}), 400
 
                 if not password:
                     return jsonify({"error": "Password required"}), 400
@@ -113,7 +114,7 @@ def register_auth_routes(app):
                 if not auth_ok:
                     return jsonify({"error": auth_err}), 500
 
-                db.collection(COL_VERIFIED).document(phone).delete()
+                # db.collection(COL_VERIFIED).document(phone).delete()  # Also disable deletion
 
                 base_profile_updates = {
                     "uid": uid,

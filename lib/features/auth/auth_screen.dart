@@ -51,13 +51,11 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
   bool _isLocationLoading = false; 
   String? _pincodeError; 
-  String? _serverCorrelationId;
 
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _nameController = TextEditingController();
   final _pinController = TextEditingController();
-  final _otpController = TextEditingController();
 
   List<String> _localities = [];
   String? _selectedLocality;
@@ -68,7 +66,6 @@ class _AuthScreenState extends State<AuthScreen> {
     _phoneController.dispose();
     _nameController.dispose();
     _pinController.dispose();
-    _otpController.dispose();
     super.dispose();
   }
 
@@ -79,10 +76,21 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  void _showSuccess(String message) {
+  void _showSystemOffline() {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("System Offline", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+        content: const Text("Contact Developer, the system is now offline. APIs may have expired or are unavailable."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text("OK"),
+          ),
+        ],
+      ),
     );
   }
 
@@ -141,97 +149,8 @@ class _AuthScreenState extends State<AuthScreen> {
       if (_localities.isEmpty) { setState(() => _pincodeError = 'Enter a valid pincode first'); return; }
       if (_selectedLocality == null) { _showError('Please select a locality.'); return; }
 
-      await _requestOtpForNewUser();
-    }
-  }
-
-  Future<void> _requestOtpForNewUser() async {
-    setState(() => _isLoading = true);
-    final phone = _phoneController.text.trim();
-    try {
-      final response = await http.post(
-        Uri.parse('$API_BASE_URL/generate-otp'),
-        headers: { "Content-Type": "application/json", "x-secret-key": API_SECRET },
-        body: jsonEncode({"phone": phone}), 
-      ).timeout(const Duration(seconds: 15));
-
-      final body = jsonDecode(response.body);
-      if (response.statusCode == 200) {
-        _serverCorrelationId = body['correlation_id'];
-        if (mounted) _showOtpDialog(phone);
-      } else {
-        throw Exception("Server Error: ${body['error']}");
-      }
-    } catch (e) { _showError("Error: $e"); } finally { if (mounted) setState(() => _isLoading = false); }
-  }
-
-  void _showOtpDialog(String phone) {
-    _otpController.clear();
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Verify Phone", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-              Text("Enter the 6-digit code sent to +91 $phone"),
-              const SizedBox(height: 16),
-
-              TextFormField(
-                controller: _otpController, 
-                keyboardType: TextInputType.number, 
-                maxLength: 6, 
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 20, letterSpacing: 6, fontWeight: FontWeight.bold, color: _primaryTeal),
-                decoration: _proInputDecoration('OTP Code', Icons.lock_clock_outlined).copyWith(
-                  counterText: "", 
-                  prefixIcon: null, 
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.green, width: 2), 
-                  ),
-                ),
-              ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.red))),
-          ElevatedButton(
-            onPressed: () { 
-              Navigator.pop(ctx); 
-              _verifyOtpAndCreateAccount(phone, _otpController.text.trim()); 
-            }, 
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green.shade600, 
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: Text(_isWorker ? "Verify & Continue" : "Verify & Sign Up")
-          )
-        ],
-      ),
-    );
-  }
-
-  Future<void> _verifyOtpAndCreateAccount(String phone, String code) async {
-    if (code.length != 6) { _showError("OTP must be 6 digits"); return; }
-    setState(() => _isLoading = true);
-    
-    try {
-      final response = await http.post(
-        Uri.parse('$API_BASE_URL/verify-otp-log'), 
-        headers: { "Content-Type": "application/json", "x-secret-key": API_SECRET },
-        body: jsonEncode({ "phone": phone, "code": code, "correlation_id": _serverCorrelationId }), 
-      ).timeout(const Duration(seconds: 15));
-
-      final body = jsonDecode(response.body);
-      if (response.statusCode != 200 || body['valid'] != true) {
-        throw Exception(body['error'] ?? 'Invalid OTP');
-      }
-
+      // OTP verification disabled for development
+      final phone = _phoneController.text.trim();
       if (_isWorker) {
         final Map<String, dynamic> signupData = {
           'password': _passwordController.text.trim(),
@@ -255,10 +174,6 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         await _completeUserSignup(phone);
       }
-    } catch (e) { 
-      _showError("$e"); 
-    } finally { 
-      if (mounted) setState(() => _isLoading = false); 
     }
   }
 
@@ -282,7 +197,7 @@ class _AuthScreenState extends State<AuthScreen> {
       if (response.statusCode == 200 && body['ok'] == true) {
         await _login();
       } else { throw Exception(body['error'] ?? 'Failed to create profile'); }
-    } catch (e) { _showError("$e"); }
+    } catch (e) { _showSystemOffline(); }
   }
 
 

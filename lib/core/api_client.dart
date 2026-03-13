@@ -74,10 +74,38 @@ class ApiClient {
     });
   }
 
-  // TODO: Add generateStartOtp method
-  // TODO: Add verifyStartOtp method
-  // TODO: Add generateEndOtp method
-  // TODO: Add verifyEndOtp method
+  // Generate Start OTP
+  static Future<Map<String, dynamic>> generateStartOtp(String bookingId) async {
+    return await post('/generate-start-otp', {
+      "bookingId": bookingId,
+    });
+  }
+
+  // Verify Start OTP
+  static Future<Map<String, dynamic>> verifyStartOtp(String bookingId, String correlationId, String code) async {
+    return await post('/verify-start-otp', {
+      "bookingId": bookingId,
+      "correlationId": correlationId,
+      "code": code,
+    });
+  }
+
+  // Generate End OTP
+  static Future<Map<String, dynamic>> generateEndOtp(String bookingId) async {
+    return await post('/generate-end-otp', {
+      "bookingId": bookingId,
+    });
+  }
+
+  // Verify End OTP
+  static Future<Map<String, dynamic>> verifyEndOtp(String bookingId, String correlationId, String code) async {
+    return await post('/verify-end-otp', {
+      "bookingId": bookingId,
+      "correlationId": correlationId,
+      "code": code,
+    });
+  }
+
   // TODO: Add cancelBooking method
   // TODO: Add getBooking method
   // TODO: Add getWorkerAvailability method

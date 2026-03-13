@@ -6,8 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'features/auth/auth_wrapper.dart';
-import 'features/user/user_dashboard.dart'; // Using UserDashboard as it's the wrapper
-import 'features/worker/worker_dashboard.dart';
+// Using UserDashboard as it's the wrapper
 import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
 
 // TODO: Add internationalization (i18n) support for native languages

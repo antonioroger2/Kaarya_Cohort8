@@ -721,7 +721,7 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  "This worker is ${_workerDistanceKm.toStringAsFixed(1)} km away. For a '${_selectedServiceCategory}' job, booking outside $_jobDistanceThreshold km highly increases the risk of delays or cancellation. Kaarya Connect holds no liability for extreme travel times.",
+                                  "This worker is ${_workerDistanceKm.toStringAsFixed(1)} km away. For a '$_selectedServiceCategory' job, booking outside $_jobDistanceThreshold km highly increases the risk of delays or cancellation. Kaarya Connect holds no liability for extreme travel times.",
                                   style: TextStyle(color: Colors.red.shade800, fontSize: 12),
                                 ),
                               ],

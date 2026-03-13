@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../../core/api_client.dart'; 
-import '../../features/auth/auth_screen.dart';
 
 class GeneralBookingScreen extends StatefulWidget {
   final String userId;
@@ -213,6 +212,7 @@ class _GeneralBookingScreenState extends State<GeneralBookingScreen> {
           'locality': _userData?['locality'] ?? 'Unknown',
           'pin': _userData?['pin'] ?? '',
           'address': _addressController.text.trim(),
+          'db_address': _nominatimAddress ?? _addressController.text.trim(),
           'landmark': _landmarkController.text.trim(),
           'lat': _currentPosition?.latitude, 
           'lng': _currentPosition?.longitude,

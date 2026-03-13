@@ -1,5 +1,4 @@
 
-import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -522,7 +521,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLocationLoading = false;
   String? _profilePicUrl;
   String _userName = 'Guest';
-  bool _isRefreshing = false;
 
   final List<Map<String, dynamic>> _categories = [
     {'name': 'Plumber', 'icon': Icons.plumbing},
@@ -676,13 +674,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _onRefresh() async {
-    setState(() => _isRefreshing = true);
-    
     await Future.wait([
       if (!_isGuest) _loadRegisteredUserData(), 
       if (_isGuest) _detectLocation(),
     ]);
-    if (mounted) setState(() => _isRefreshing = false);
   }
 
   void _startGeneralRequest(BuildContext context) {

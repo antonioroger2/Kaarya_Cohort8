@@ -148,6 +148,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
                         // Navigate to booking details if ID is present
                         if (bookingId != null) {
+                          // ignore: use_build_context_synchronously
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => BookingDetailsScreen(

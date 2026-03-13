@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart'; 
-import '../../core/theme.dart'; 
 
 
 class DoodleBackground extends StatelessWidget {
@@ -38,10 +37,10 @@ class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.userId, required this.isWorker});
 
   @override
-  _ProfileScreenState createState() => _ProfileScreenState();
+  ProfileScreenState createState() => ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> {
+class ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _isLoading = false; 

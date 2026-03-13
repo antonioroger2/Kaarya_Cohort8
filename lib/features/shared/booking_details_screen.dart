@@ -6,10 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 // import 'package:razorpay_flutter/razorpay_flutter.dart';
 // TODO: Add pinput package to pubspec.yaml
 // import 'package:pinput/pinput.dart';
-// TODO: Add sms_autofill package to pubspec.yaml
-// import 'package:sms_autofill/sms_autofill.dart';
 import '../../core/theme.dart';
 import '../../core/api_client.dart'; 
+import './otp_viewer_screen.dart';
+import './otp_input_screen.dart';
 import './rating_dialog.dart'; 
 
 class BookingDetailsScreen extends StatefulWidget {
@@ -29,15 +29,7 @@ class BookingDetailsScreen extends StatefulWidget {
 }
 
 class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
-  final _otpController = TextEditingController();
   bool _isLoading = false;
-  bool _paymentReceived = false; 
-
-  @override
-  void dispose() {
-    _otpController.dispose();
-    super.dispose();
-  }
 
   void _showLoading(bool loading) {
     setState(() => _isLoading = loading);
@@ -70,32 +62,30 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     _showLoading(true); 
     try { 
-        final response = await ApiClient.post('/generate-start-otp', { 'bookingId': widget.bookingId, 'userId': widget.userId }); 
+        final response = await ApiClient.generateStartOtp(widget.bookingId); 
         if (response['ok'] == true) { 
-            _showOtpVerificationDialog('start', response['correlationId']); 
+          _showLoading(false);
+          // Navigate to OTP viewer screen
+          if (!mounted) return;
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => OtpViewerScreen(
+                bookingId: widget.bookingId,
+                otpType: 'start',
+                correlationId: response['correlationId'],
+              ),
+            ),
+          ).then((_) {
+            // Refresh the booking data when returning from OTP viewer
+            setState(() {});
+          });
         } 
     } catch (e) { 
         _showError(e.toString()); 
-    } finally { 
-        _showLoading(false); 
+        _showLoading(false);
     } 
   }
   
-  Future<void> _verifyStartOtp(String correlationId) async { 
-    _showLoading(true); 
-    Navigator.of(context).pop(); 
-    try { 
-      final response = await ApiClient.post('/verify-start-otp', { 'bookingId': widget.bookingId, 'correlationId': correlationId, 'code': _otpController.text, 'verifiedBy': 'user' }); 
-      if (response['valid'] == true) { 
-        _otpController.clear(); 
-      } 
-    } catch (e) { 
-      _showError(e.toString()); 
-    } finally { 
-      _showLoading(false); 
-    } 
-  }
-
   Future<void> _generateEndOtp() async { 
     // TODO: Integrate Razorpay payment before generating OTP
     // Show payment sheet, if success, proceed to generate OTP
@@ -105,14 +95,27 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     _showLoading(true); 
     try { 
-      final response = await ApiClient.post('/generate-end-otp', { 'bookingId': widget.bookingId, 'requestedBy': 'user', 'paymentReceived': true }); 
+      final response = await ApiClient.generateEndOtp(widget.bookingId); 
       if (response['ok'] == true) { 
-        _showOtpVerificationDialog('end', response['correlationId']); 
+        _showLoading(false);
+        // Navigate to OTP viewer screen
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => OtpViewerScreen(
+              bookingId: widget.bookingId,
+              otpType: 'end',
+              correlationId: response['correlationId'],
+            ),
+          ),
+        ).then((_) {
+          // Refresh the booking data when returning from OTP viewer
+          setState(() {});
+        });
       } 
     } catch (e) { 
-      _showError(e.toString()); 
-    } finally { 
-      _showLoading(false); 
+        _showError(e.toString()); 
+        _showLoading(false);
     } 
   }
 
@@ -139,22 +142,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     ) ?? false;
   }
 
-  Future<void> _verifyEndOtp(String correlationId) async { 
-    _showLoading(true); 
-    Navigator.of(context).pop(); 
-    try { 
-      final response = await ApiClient.post('/verify-end-otp', { 'bookingId': widget.bookingId, 'correlationId': correlationId, 'code': _otpController.text, 'verifiedBy': 'user', 'paymentReceived': _paymentReceived }); 
-      if (response['valid'] == true) { 
-        _otpController.clear(); 
-        setState(() => _paymentReceived = false); 
-      } 
-    } catch (e) { 
-      _showError(e.toString()); 
-    } finally { 
-      _showLoading(false); 
-    } 
-  }
-
   Future<void> _rateJob(Map<String, dynamic> bookingData) async { 
     final workerName = bookingData['workerInfo']?['name'] ?? 'Worker'; 
     final workerId = bookingData['workerId']; 
@@ -174,43 +161,6 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
     } finally { 
       if (mounted) _showLoading(false); 
     } 
-  }
-
-  void _showOtpVerificationDialog(String type, String correlationId) {
-    _otpController.clear();
-    bool isEndOtp = type == 'end';
-    if (isEndOtp) setState(() => _paymentReceived = false);
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder( 
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: Text(isEndOtp ? 'Verify Job End' : 'Verify Job Start'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Please ask your worker for the 6-digit code and enter it below.'),
-                // TODO: Replace with Pinput for better UX
-                // Pinput(
-                //   controller: _otpController,
-                //   length: 6,
-                //   keyboardType: TextInputType.number,
-                //   onCompleted: (pin) => _otpController.text = pin,
-                // ),
-                TextField(controller: _otpController, keyboardType: TextInputType.number, maxLength: 6,),
-                if (isEndOtp) CheckboxListTile(title: const Text("I have paid the worker"), value: _paymentReceived, onChanged: (val) { setDialogState(() => _paymentReceived = val ?? false); setState(() => _paymentReceived = val ?? false); },),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-              ElevatedButton(onPressed: () { if (isEndOtp) { _verifyEndOtp(correlationId); } else { _verifyStartOtp(correlationId); } }, child: const Text('Verify')),
-            ],
-          );
-        },
-      ),
-    );
-    // TODO: Enable SMS auto-fill
-    // SmsAutoFill().listenForCode();
   }
 
 Future<void> _launchMaps(String address, double? lat, double? lng) async {
@@ -499,9 +449,9 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
     if (widget.isWorker) {
       switch (status) {
         case 'a1': buttons.add(const Text('Waiting for user to start job...', textAlign: TextAlign.center, style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))); break;
-        case 'w1': buttons.add(const Text('Please share the Start OTP (from your SMS) with the user.', textAlign: TextAlign.center, style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold))); break;
+        case 'w1': buttons.add(const Text('Check your app notifications for the Start OTP. Share the code verbally with the user when asked.', textAlign: TextAlign.center, style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold))); break;
         case 'w2': buttons.add(const Text('Job in progress...', textAlign: TextAlign.center, style: TextStyle(color: Colors.cyan, fontWeight: FontWeight.bold))); break;
-        case 'e1': case 'e2': buttons.add(const Text('Please share the End OTP (from your SMS) with the user to confirm payment.', textAlign: TextAlign.center, style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold))); break;
+        case 'e1': case 'e2': buttons.add(const Text('Check your app notifications for the End OTP. Share the code verbally with the user when asked.', textAlign: TextAlign.center, style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold))); break;
         case 'e3': buttons.add(const Text('Job completed.', textAlign: TextAlign.center, style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))); break;
       }
     } else {
@@ -525,6 +475,26 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
                style: ElevatedButton.styleFrom(backgroundColor: Colors.red, disabledBackgroundColor: Colors.red[100], disabledForegroundColor: Colors.red[800])
              ));
           } else {
+             buttons.add(
+               Container(
+                 padding: const EdgeInsets.all(12),
+                 margin: const EdgeInsets.only(bottom: 8),
+                 decoration: BoxDecoration(
+                   color: Colors.blue.withOpacity(0.1),
+                   borderRadius: BorderRadius.circular(8),
+                   border: Border.all(color: Colors.blue.shade200),
+                 ),
+                 child: const Text(
+                   '💡 Initiate Start OTP only after discussing and agreeing on job terms, wage, and scope with the worker.',
+                   style: TextStyle(
+                     fontSize: 14,
+                     color: Colors.blue,
+                     fontWeight: FontWeight.w500,
+                   ),
+                   textAlign: TextAlign.center,
+                 ),
+               ),
+             );
              buttons.add(ElevatedButton.icon(
                onPressed: () => _attemptStartJob(bookingData), 
                icon: const Icon(Icons.play_arrow), 
@@ -533,9 +503,73 @@ Future<void> _launchMaps(String address, double? lat, double? lng) async {
              )); 
           }
           break;
-        case 'w1': buttons.add(ElevatedButton.icon(onPressed: () => _showOtpVerificationDialog('start', bookingData['startOTPCorrelationId']), icon: const Icon(Icons.password), label: const Text('Verify Worker\'s Start OTP'), style: ElevatedButton.styleFrom(backgroundColor: Colors.purple))); break;
-        case 'w2': buttons.add(ElevatedButton.icon(onPressed: _generateEndOtp, icon: const Icon(Icons.stop), label: const Text('End Job (Get Worker OTP)'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red))); break;
-        case 'e1': case 'e2': buttons.add(ElevatedButton.icon(onPressed: () => _showOtpVerificationDialog('end', bookingData['endOTPCorrelationId']), icon: const Icon(Icons.password), label: const Text('Verify Worker\'s End OTP'), style: ElevatedButton.styleFrom(backgroundColor: Colors.purple))); break;
+        case 'w1': 
+          buttons.add(ElevatedButton.icon(
+            onPressed: () async {
+              final result = await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OtpInputScreen(
+                    bookingId: widget.bookingId,
+                    otpType: 'start',
+                    correlationId: bookingData['startOTPCorrelationId'] ?? '',
+                  ),
+                ),
+              );
+              if (result == true) {
+                // OTP verified successfully
+                setState(() {});
+              }
+            },
+            icon: const Icon(Icons.password), 
+            label: const Text('Verify Worker\'s Start OTP'), 
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple)
+          )); 
+          break;
+        case 'w2': 
+          buttons.add(
+            Container(
+              padding: const EdgeInsets.all(12),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: const Text(
+                '💡 Initiate End OTP only after work is completed, inspected, and you are ready to make payment.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.orange,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+          buttons.add(ElevatedButton.icon(onPressed: _generateEndOtp, icon: const Icon(Icons.stop), label: const Text('End Job (Get Worker OTP)'), style: ElevatedButton.styleFrom(backgroundColor: Colors.red))); 
+          break;
+        case 'e1': case 'e2': 
+          buttons.add(ElevatedButton.icon(
+            onPressed: () async {
+              final result = await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => OtpInputScreen(
+                    bookingId: widget.bookingId,
+                    otpType: 'end',
+                    correlationId: bookingData['endOTPCorrelationId'] ?? '',
+                  ),
+                ),
+              );
+              if (result == true) {
+                // OTP verified successfully
+                setState(() {});
+              }
+            },
+            icon: const Icon(Icons.password), 
+            label: const Text('Verify Worker\'s End OTP'), 
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.purple)
+          )); 
+          break;
         case 'e3': if (rating == 0) { buttons.add(ElevatedButton.icon(onPressed: () => _rateJob(bookingData), icon: const Icon(Icons.star), label: const Text('Rate This Service'), style: ElevatedButton.styleFrom(backgroundColor: Colors.amber))); } else { buttons.add(const Text('Job completed and rated.', textAlign: TextAlign.center, style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))); } break;
       }
     }

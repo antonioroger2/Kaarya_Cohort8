@@ -42,7 +42,7 @@ dependencies:
   geolocator: ^12.0.0
   geocoding: ^4.0.0
   http: ^1.2.0
-  url_launcher: ^6.3.1
+  url_launcher: ^6.3.2
   flutter_dotenv: ^6.0.0
   # TODO: Add internationalization packages for native language support
   # flutter_localizations:

@@ -2,26 +2,18 @@
 
 # Render Environment Expectations:
 # - Linux OS with bash shell
-# - curl, grep, sed available (standard)
-# - jq not guaranteed (avoid if possible)
-# - Environment variables set in Render dashboard (e.g., FIREBASE_API_KEY) are available as $FIREBASE_API_KEY
-# - Internet access for downloading Flutter and GitHub API
-# - Sufficient disk space for Flutter SDK (~1GB)
+# - curl available (standard)
+# - Environment variables set in Render dashboard are available (e.g., $FIREBASE_API_KEY)
+# - Internet access for downloading Flutter
+# - Sufficient disk space for Flutter SDK (~0.5GB)
 # - Build timeout: Default 15min, can be increased in Render settings
 # - Static site publish directory: build/web
 
-# Fetch latest stable Flutter version from GitHub API (avoids jq dependency)
-LATEST_FLUTTER=$(curl -s https://api.github.com/repos/flutter/flutter/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
-
-# Download and extract Flutter
-curl -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${LATEST_FLUTTER}-stable.tar.xz
-tar xf flutter_linux_${LATEST_FLUTTER}-stable.tar.xz
-
-# Set PATH and verify
-export PATH="$PATH:$(pwd)/flutter/bin"
-flutter --version
-
-# Build with web-specific options and Firebase config from env vars
+# Download Flutter 3.41.4, extract, set PATH, verify, and build with Firebase config
+curl -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.41.4-stable.tar.xz && \
+tar xf flutter_linux_3.41.4-stable.tar.xz && \
+export PATH="$PATH:$(pwd)/flutter/bin" && \
+flutter --version && \
 flutter build web --release --base-href / \
   --dart-define=FIREBASE_API_KEY=$FIREBASE_API_KEY \
   --dart-define=FIREBASE_AUTH_DOMAIN=$FIREBASE_AUTH_DOMAIN \

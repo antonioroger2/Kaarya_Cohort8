@@ -307,6 +307,169 @@ class _AuthScreenState extends State<AuthScreen> {
                             },
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: _isLocationLoading ? null : _detectLocationAndFetchPincode,
+                          icon: const Icon(Icons.my_location, size: 18),
+                          label: const Text('Auto'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primaryTeal,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (!_isLoginMode) const SizedBox(height: 16),
+
+                  if (!_isLoginMode && _localities.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      value: _selectedLocality,
+                      decoration: _proInputDecoration('Select Locality', Icons.location_city_outlined),
+                      items: _localities.map((loc) => DropdownMenuItem(value: loc, child: Text(loc))).toList(),
+                      onChanged: (val) => setState(() => _selectedLocality = val),
+                      validator: (v) => v == null ? 'Please select locality' : null,
+                    ),
+                  if (!_isLoginMode && _localities.isNotEmpty) const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: true,
+                    decoration: _proInputDecoration('Password', Icons.lock_outline),
+                    validator: (v) => (v == null || v.length < 6) ? 'Password must be at least 6 characters' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (!_isLoginMode) const SizedBox(height: 20),
+                  if (!_isLoginMode)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      decoration: BoxDecoration(color: _lightGrey, borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _isWorker = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: !_isWorker ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: !_isWorker ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4)] : [],
+                                ),
+                                child: Center(child: Text("I'm a User", style: TextStyle(fontWeight: FontWeight.bold, color: !_isWorker ? _primaryBlue : _darkText.withOpacity(0.6)))),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setState(() => _isWorker = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _isWorker ? Colors.white : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: _isWorker ? [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4)] : [],
+                                ),
+                                child: Center(child: Text("I'm a Worker", style: TextStyle(fontWeight: FontWeight.bold, color: _isWorker ? _primaryTeal : _darkText.withOpacity(0.6)))),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  const SizedBox(height: 30),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _submitAuthForm,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        backgroundColor: _isLoginMode ? _primaryBlue : _primaryTeal,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 4,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(mainButtonText, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _isLoginMode = !_isLoginMode;
+                      _formKey.currentState?.reset(); 
+                      _pinController.clear();
+                      _localities = [];
+                      _selectedLocality = null;
+                      _pincodeError = null;
+                    }),
+                    child: Text(
+                      _isLoginMode ? 'Don\'t have an account? Sign Up' : 'Already have an account? Login',
+                      style: TextStyle(color: _primaryBlue.withOpacity(0.8), fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+                    _isLoginMode ? 'Welcome Back!' : 'Join Our Network',
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800, 
+                      color: _primaryTeal,
+                      fontSize: 28,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _isLoginMode ? 'Please sign in to access services.' : 'Find trusted local work or hire professionals.',
+                    style: TextStyle(fontSize: 16, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 30),
+
+                  if (!_isLoginMode)
+                    TextFormField(
+                      controller: _nameController,
+                      decoration: _proInputDecoration('Full Name', Icons.person_outline),
+                      validator: (v) => v!.trim().isEmpty ? 'Please enter name' : null,
+                    ),
+                  if (!_isLoginMode) const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    maxLength: 10,
+                    decoration: _proInputDecoration('10-Digit Phone Number', Icons.phone_outlined).copyWith(counterText: ""),
+                    validator: (v) => (v == null || RegExp(r'^[0-9]{10}$').hasMatch(v) == false) ? 'Must be 10 digits' : null,
+                  ),
+                  const SizedBox(height: 16),
+
+                  if (!_isLoginMode)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _pinController,
+                            keyboardType: TextInputType.number,
+                            maxLength: 6,
+                            decoration: _proInputDecoration('6-Digit Pincode', Icons.location_on_outlined).copyWith(
+                              counterText: "", errorText: _pincodeError, 
+                              suffixIcon: _isLocationLoading ? const Padding(padding: EdgeInsets.all(12.0), child: SizedBox(height: 10, width: 10, child: CircularProgressIndicator(strokeWidth: 2, color: _primaryTeal))) : null,
+                            ),
+                            validator: (v) => (v == null || v.length != 6) ? 'Must be 6 digits' : null,
+                            onChanged: (val) {
+                              if (_pincodeError != null) setState(() => _pincodeError = null);
+                              if (val.length == 6) { _fetchLocalities(val); } else { setState(() { _localities = []; _selectedLocality = null; }); }
+                            },
+                          ),
+                        ),
                         const SizedBox(width: 10),
                         Container(
                           decoration: BoxDecoration(color: _lightGrey, borderRadius: BorderRadius.circular(12)),

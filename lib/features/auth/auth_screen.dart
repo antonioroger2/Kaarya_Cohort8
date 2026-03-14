@@ -238,7 +238,9 @@ class _AuthScreenState extends State<AuthScreen> {
         elevation: 0,
       ),
       body: Center(
-        child: SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
             child: Form(
               key: _formKey,
@@ -246,6 +248,13 @@ class _AuthScreenState extends State<AuthScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  // Professional logo/icon
+                  const CircleAvatar(
+                    radius: 40,
+                    backgroundColor: _primaryTeal,
+                    child: Icon(Icons.work, size: 40, color: Colors.white),
+                  ),
+                  const SizedBox(height: 20),
                   
                   Text(
                     _isLoginMode ? 'Welcome Back!' : 'Join Our Network',

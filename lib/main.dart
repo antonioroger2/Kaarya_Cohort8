@@ -6,10 +6,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
-import 'features/auth/auth_wrapper.dart';
-// Using UserDashboard as it's the wrapper
-import 'features/auth/worker_onboarding_screen.dart'; // Assuming this name
+import 'app.dart';
 
 // TODO: Add internationalization (i18n) support for native languages
 // - Add flutter_localizations and intl packages
@@ -61,27 +60,5 @@ void main() async {
     // TODO: Handle FCM tokens for backend integration
   }
 
-  runApp(const KaaryaConnectApp());
-}
-
-class KaaryaConnectApp extends StatelessWidget {
-  const KaaryaConnectApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Kaarya Connect',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.teal, // Keeping original theme color
-        useMaterial3: true,
-      ),
-      // Fixed Routes: Only the root is kept. Other screens should be pushed.
-      routes: {
-        '/': (context) => const AuthWrapper(),
-        // Temporary worker signup route needed for the AuthScreen flow interception
-        '/worker-onboarding': (context) => const WorkerOnboardingScreen(phoneNumber: '', uid: ''),
-      },
-    );
-  }
+  runApp(const ProviderScope(child: KaaryaConnectApp()));
 }

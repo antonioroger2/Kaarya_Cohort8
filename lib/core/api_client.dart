@@ -1,8 +1,9 @@
 // lib/core/api_client.dart
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 class ApiClient {
 
@@ -27,13 +28,13 @@ class ApiClient {
       final responseBody = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        // Return the full response body if it's a success
         return responseBody as Map<String, dynamic>;
-      } else {
-        // Throw a specific exception with the server's error message
-        final errorMessage = responseBody['error'] ?? 'Unknown server error';
-        throw ApiException('Error ${response.statusCode}: $errorMessage');
       }
+
+      final errorMessage = response.statusCode == 404
+          ? 'The backend is currently offline. Please contact the developer.'
+          : responseBody['error'] ?? 'Unknown server error';
+      throw ApiException('Error ${response.statusCode}: $errorMessage');
     } catch (e) {
       debugPrint("API Client Error ($endpoint): $e");
       // Re-throw as a specific exception
@@ -53,10 +54,12 @@ class ApiClient {
 
       if (response.statusCode == 200) {
         return responseBody as Map<String, dynamic>;
-      } else {
-        final errorMessage = responseBody['error'] ?? 'Unknown server error';
-        throw ApiException('Error ${response.statusCode}: $errorMessage');
       }
+
+      final errorMessage = response.statusCode == 404
+          ? 'The backend is currently offline. Please contact the developer.'
+          : responseBody['error'] ?? 'Unknown server error';
+      throw ApiException('Error ${response.statusCode}: $errorMessage');
     } catch (e) {
       debugPrint("API Client Error ($endpoint): $e");
       throw ApiException(e.toString());
@@ -95,6 +98,44 @@ class ApiClient {
     return await post('/generate-end-otp', {
       "bookingId": bookingId,
     });
+  }
+
+  static Future<Map<String, dynamic>> uploadKycDocument({
+    required String workerId,
+    required List<int> bytes,
+    required String filename,
+    required String idType,
+  }) async {
+    try {
+      final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl/kyc/verify'))
+        ..headers.addAll({
+          'x-secret-key': _apiSecret,
+        })
+        ..fields['workerId'] = workerId
+        ..fields['idType'] = idType
+        ..files.add(http.MultipartFile.fromBytes(
+          'document',
+          bytes,
+          filename: filename,
+          contentType: MediaType('image', 'jpeg'),
+        ));
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 40));
+      final response = await http.Response.fromStream(streamedResponse);
+      final responseBody = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        return responseBody as Map<String, dynamic>;
+      }
+
+      final errorMessage = response.statusCode == 404
+          ? 'The backend is currently offline. Please contact the developer.'
+          : responseBody['error'] ?? 'Unknown server error';
+      throw ApiException('Error ${response.statusCode}: $errorMessage');
+    } catch (e) {
+      debugPrint("API Client Error (/kyc/verify): $e");
+      throw ApiException(e.toString());
+    }
   }
 
   // Verify End OTP

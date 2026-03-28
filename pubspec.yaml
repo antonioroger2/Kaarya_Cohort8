@@ -44,6 +44,8 @@ dependencies:
   http: ^1.2.0
   url_launcher: ^6.3.2
   flutter_dotenv: ^6.0.0
+  flutter_riverpod: ^2.5.1
+  image_picker: ^1.1.2
   # TODO: Add internationalization packages for native language support
   # flutter_localizations:
   #   sdk: flutter

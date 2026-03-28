@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart'; 
+import '../worker/kyc_screen.dart';
 
 
 class DoodleBackground extends StatelessWidget {
@@ -221,9 +222,26 @@ class ProfileScreenState extends State<ProfileScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Government ID Verification',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Government ID Verification',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primaryTeal),
+                ),
+                if (widget.isWorker)
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => KYCScreen(workerId: widget.userId),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.verified_user, color: AppColors.primaryTeal),
+                    label: const Text('Verify ID (OCR)', style: TextStyle(color: AppColors.primaryTeal)),
+                  ),
+              ],
             ),
             const Divider(height: 20),
             

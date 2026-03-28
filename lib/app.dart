@@ -1,13 +1,15 @@
 // lib/app.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
 import 'features/auth/auth_wrapper.dart';
+import 'features/auth/worker_onboarding_screen.dart';
 
-class KaaryaConnectApp extends StatelessWidget {
+class KaaryaConnectApp extends ConsumerWidget {
   const KaaryaConnectApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'Kaarya Connect',
       debugShowCheckedModeBanner: false,
@@ -83,6 +85,9 @@ class KaaryaConnectApp extends StatelessWidget {
         ),
       ),
       home: const AuthWrapper(),
+      routes: {
+        '/worker-onboarding': (context) => const WorkerOnboardingScreen(phoneNumber: '', uid: ''),
+      },
     );
   }
 }

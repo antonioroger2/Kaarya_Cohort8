@@ -16,6 +16,9 @@ class WorkerJobsScreen extends StatefulWidget {
 
 class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late final Stream<QuerySnapshot> _unreadNotificationsStream;
+  late final Stream<QuerySnapshot> _newRequestsStream;
+  late Stream<QuerySnapshot> _acceptedJobsStream;
 
   // --- Filter State ---
   bool _isFurthestFirst = false;
@@ -25,6 +28,17 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _unreadNotificationsStream = _buildUnreadNotificationsStream();
+    _newRequestsStream = _buildNewRequestsStream();
+    _acceptedJobsStream = _buildAcceptedJobsStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant WorkerJobsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workerId != widget.workerId) {
+      _acceptedJobsStream = _buildAcceptedJobsStream();
+    }
   }
 
   @override
@@ -33,19 +47,62 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
     super.dispose();
   }
 
+  Stream<QuerySnapshot> _buildUnreadNotificationsStream() {
+    return FirebaseFirestore.instance
+        .collection('notifications')
+        .where('recipientId', isEqualTo: widget.workerId)
+        .where('isRead', isEqualTo: false)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> _buildNewRequestsStream() {
+    return FirebaseFirestore.instance
+        .collectionGroup('workerRequests')
+        .where('workerId', isEqualTo: widget.workerId)
+        .where('status', isEqualTo: 'pending')
+        .orderBy('sentAt', descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> _buildAcceptedJobsStream() {
+    List<String> statusQuery;
+    if (_statusFilter == 'accepted') {
+      statusQuery = ['a1'];
+    } else if (_statusFilter == 'inprogress') {
+      statusQuery = ['w1', 'w2'];
+    } else {
+      statusQuery = ['a1', 'w1', 'w2'];
+    }
+
+    return FirebaseFirestore.instance
+        .collection('bookings')
+        .where('workerId', isEqualTo: widget.workerId)
+        .where('status', whereIn: statusQuery)
+        .orderBy('appointmentDate', descending: _isFurthestFirst)
+        .snapshots();
+  }
+
+  void _refreshAcceptedJobsStream() {
+    setState(() => _acceptedJobsStream = _buildAcceptedJobsStream());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Jobs'),
+        title: const Text(
+          'My Jobs',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
+        foregroundColor: Colors.white,
         actions: [
           // Inbox Icon
           StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('notifications')
-                .where('recipientId', isEqualTo: widget.workerId)
-                .where('isRead', isEqualTo: false)
-                .snapshots(),
+            stream: _unreadNotificationsStream,
             builder: (context, snapshot) {
               final unreadCount = snapshot.data?.docs.length ?? 0;
               return IconButton(
@@ -89,12 +146,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
   // ==========================================
   Widget _buildNewRequestsList() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collectionGroup('workerRequests')
-          .where('workerId', isEqualTo: widget.workerId)
-          .where('status', isEqualTo: 'pending')
-          .orderBy('sentAt', descending: true) 
-          .snapshots(),
+      stream: _newRequestsStream,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           debugPrint("REQUESTS ERROR: ${snapshot.error}");
@@ -140,28 +192,12 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
   // TAB 2: UPCOMING JOBS (Sorted by APPOINTMENT DATE)
   // ==========================================
   Widget _buildAcceptedJobsList() {
-    List<String> statusQuery;
-    if (_statusFilter == 'accepted') {
-      statusQuery = ['a1'];
-    } else if (_statusFilter == 'inprogress') {
-      statusQuery = ['w1', 'w2'];
-    } else {
-      statusQuery = ['a1', 'w1', 'w2'];
-    }
-
     return Column(
       children: [
         _buildFilterBar(),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('bookings')
-                .where('workerId', isEqualTo: widget.workerId)
-                .where('status', whereIn: statusQuery)
-                // --- KEY CHANGE: Sorting by appointmentDate (Actual Job Time) ---
-                // NOT 'bookingDate' (Creation Time)
-                .orderBy('appointmentDate', descending: _isFurthestFirst) 
-                .snapshots(),
+            stream: _acceptedJobsStream,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 // --- LOOK IN YOUR DEBUG CONSOLE IF THIS ERROR APPEARS ---
@@ -266,7 +302,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
                         selected: !_isFurthestFirst,
                         onSelected: (val) {
                           setModalState(() => _isFurthestFirst = false);
-                          setState(() {});
+                          _refreshAcceptedJobsStream();
                         },
                       ),
                       FilterChip(
@@ -274,7 +310,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
                         selected: _isFurthestFirst,
                         onSelected: (val) {
                           setModalState(() => _isFurthestFirst = true);
-                          setState(() {});
+                          _refreshAcceptedJobsStream();
                         },
                       ),
                     ],
@@ -290,7 +326,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
                         selected: _statusFilter == 'all',
                         onSelected: (val) {
                           setModalState(() => _statusFilter = 'all');
-                          setState(() {});
+                          _refreshAcceptedJobsStream();
                         },
                       ),
                       FilterChip(
@@ -298,7 +334,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
                         selected: _statusFilter == 'accepted',
                         onSelected: (val) {
                           setModalState(() => _statusFilter = 'accepted');
-                          setState(() {});
+                          _refreshAcceptedJobsStream();
                         },
                       ),
                       FilterChip(
@@ -306,7 +342,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
                         selected: _statusFilter == 'inprogress',
                         onSelected: (val) {
                           setModalState(() => _statusFilter = 'inprogress');
-                          setState(() {});
+                          _refreshAcceptedJobsStream();
                         },
                       ),
                     ],

@@ -100,7 +100,14 @@ class _SOSScreenState extends State<SOSScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Emergency SOS'),
+        title: const Text(
+          'Emergency SOS',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: Colors.red,
         foregroundColor: Colors.white,
       ),

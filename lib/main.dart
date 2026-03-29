@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 // TODO: Add firebase_messaging package to pubspec.yaml
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -23,34 +24,37 @@ void main() async {
     usePathUrlStrategy();
   }
   
-  // Load environment variables for non-web
-  if (!kIsWeb) {
-    await dotenv.load(fileName: ".env");
-  }
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
   
   // Initialize Firebase
   try {
-    await Firebase.initializeApp(
-      options: kIsWeb ? FirebaseOptions(
-        apiKey: const String.fromEnvironment('FIREBASE_API_KEY'),
-        authDomain: const String.fromEnvironment('FIREBASE_AUTH_DOMAIN'),
-        projectId: const String.fromEnvironment('FIREBASE_PROJECT_ID'),
-        storageBucket: const String.fromEnvironment('FIREBASE_STORAGE_BUCKET'),
-        messagingSenderId: const String.fromEnvironment('FIREBASE_MESSAGING_SENDER_ID'),
-        appId: const String.fromEnvironment('FIREBASE_APP_ID'),
-      ) : FirebaseOptions(
-        apiKey: dotenv.env['FIREBASE_API_KEY']!,
-        authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']!,
-        projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
-        storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
-        messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
-        appId: dotenv.env['FIREBASE_APP_ID']!,
-      ),
-    );
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: FirebaseOptions(
+          apiKey: dotenv.env['FIREBASE_API_KEY']!,
+          authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']!,
+          projectId: dotenv.env['FIREBASE_PROJECT_ID']!,
+          storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']!,
+          messagingSenderId: dotenv.env['FIREBASE_MESSAGING_SENDER_ID']!,
+          appId: dotenv.env['FIREBASE_APP_ID']!,
+        ),
+      );
+    }
   } catch (e) {
     // Fallback for debugging: run without Firebase if init fails
     print('Firebase init failed: $e');
     // For web, you can show a simple UI or log
+  }
+
+  // Firestore web mitigation for listener instability seen as b815/ca9
+  // internal assertions in Firebase JS SDK 12.9.0.
+  if (kIsWeb) {
+    FirebaseFirestore.instance.settings = const Settings(
+      persistenceEnabled: false,
+      webExperimentalForceLongPolling: true,
+      webExperimentalAutoDetectLongPolling: false,
+    );
   }
 
   // Initialize FCM for non-web

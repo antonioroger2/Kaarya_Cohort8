@@ -412,7 +412,6 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
       return;
     }
 
-    
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       BookingCreationScreen.pendingBookingData = {
@@ -432,7 +431,10 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
         'landmark': _landmarkController.text.trim()
       };
       await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AuthScreen()));
-      if (FirebaseAuth.instance.currentUser != null && mounted) Navigator.of(context).pop(); 
+      // After login, if user is now authenticated, proceed to submit the booking
+      if (FirebaseAuth.instance.currentUser != null && mounted) {
+        _confirmBooking(); // Recursively call to submit now that user is logged in
+      }
       return;
     }
 
@@ -596,10 +598,18 @@ class _BookingCreationScreenState extends State<BookingCreationScreen> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
-        title: Text('Book ${workerName.split(' ').first}', style: const TextStyle(fontWeight: FontWeight.w600)),
+        title: Text(
+          'Book ${workerName.split(' ').first}',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Colors.black),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

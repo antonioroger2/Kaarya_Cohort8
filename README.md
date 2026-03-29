@@ -56,6 +56,58 @@ This repository was originally built for a hackathon, where it placed Top 120 ou
 | LLM | Groq API (Llama 3.1-8b-instant) |
 
 ---
+## Local Development Setup
+
+### Prerequisites
+- Flutter SDK (latest stable version)
+- Python 3.8+
+- pip
+- Firebase project with service account key
+- Pinecone account
+- Groq API key
+
+### Backend Setup
+1. Navigate to the `backend` directory:
+   ```bash
+   cd backend
+   ```
+
+2. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Set up environment variables by copying and editing `.env`:
+   - Copy the existing `.env` file or create one with required variables (see config.py for details)
+   - Ensure `FIREBASE_CRED` points to `firebase-service-account-key.json` (placeholder created)
+   - Obtain actual Firebase service account key from Firebase Console and replace the placeholder
+
+4. Run the backend server:
+   ```bash
+   python main.py
+   ```
+   The server will start on `http://127.0.0.1:5000`
+
+### Flutter App Setup
+1. Install Flutter dependencies:
+   ```bash
+   flutter pub get
+   ```
+
+2. Ensure `.env` file is present in the root directory with required API keys.
+
+3. Run the Flutter app in debug mode:
+   ```bash
+   flutter run
+   ```
+   In debug mode, the app automatically connects to the local backend at `http://127.0.0.1:5000`. In release mode, it uses the production server.
+
+### Environment Variables
+- Backend: See `backend/.env` for required variables
+- Flutter: See `.env` for API keys
+
+Note: The Firebase service account key file is gitignored to prevent accidental commits.
+
 Escrow-based OTP Job Cycle handshake and an automated Push-to-IVR escalation protocol to ensure trust and safety across diverse network conditions
 
 ## Core AI Systems

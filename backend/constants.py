@@ -1,14 +1,14 @@
 # constants.py
 
 # --- DB COLLECTION NAMES ---
-COL_USERS = "users"
+# COL_USERS = "users"  # Unused, hardcoded "users" used instead
 COL_WORKERS = "workers"
 COL_BOOKINGS = "bookings"
 COL_CW = "canonical_works"
 COL_TOOLS = "tools"
 COL_OTP = "otp"
 COL_VERIFIED = "verified_signups"
-COL_HISTORY = "raw_to_canonical_history"
+# COL_HISTORY = "raw_to_canonical_history"  # Unused in active code
 COL_CATEGORIES = "main_categories"
 
 # TODO: Add language preference field to worker profiles

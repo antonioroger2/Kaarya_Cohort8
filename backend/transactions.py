@@ -1,6 +1,7 @@
 # transactions.py
 from datetime import datetime, timezone
 from firebase_admin import firestore
+from google.cloud.firestore_v1.transforms import ArrayUnion
 from .firebase_init import db
 from .constants import COL_WORKERS, COL_BOOKINGS
 from .utils import now_ts, hours_to_mask, slugify
@@ -37,7 +38,7 @@ def cancel_booking_in_transaction(tx, booking_ref, cancelled_by, reason):
         "cancelledAt": now_ts_val,
         "cancellationReason": reason,
         "updatedAt": now_ts_val,
-        "log.actions": firestore.ArrayUnion([{
+        "log.actions": ArrayUnion([{
             "ts": datetime.now(timezone.utc),
             "actor": cancelled_by,
             "action": "cancelled",
@@ -91,7 +92,7 @@ def accept_booking_in_transaction(tx, booking_ref, req_ref, worker_id):
     tx.set(avail_ref, {"mask": curr & (~needed), "updatedAt": now_ts_val}, merge=True)
 
     tx.update(booking_ref, {
-        "log.actions": firestore.ArrayUnion([{
+        "log.actions": ArrayUnion([{
             "ts": datetime.now(timezone.utc),
             "actor": worker_id,
             "action": "accepted",
@@ -155,7 +156,7 @@ def submit_rating_healer_transaction(tx, booking_ref, worker_ref, user_id, raw_r
         
         if s_name not in existing_cws:
             # Add to canonical works array
-            tx.update(worker_ref, {"canonicalWorks": firestore.ArrayUnion([s_name])})
+            tx.update(worker_ref, {"canonicalWorks": ArrayUnion([s_name])})
             
             # Initialize skill score for the newly discovered skill
             update_payload[f"cwSkillScore.{s_name}"] = {

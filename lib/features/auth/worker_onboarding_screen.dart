@@ -1,6 +1,3 @@
-
-
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; 
@@ -8,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart'; 
+import 'package:flutter/foundation.dart';
 
 class WorkerOnboardingScreen extends StatefulWidget {
   final String phoneNumber;
@@ -38,7 +36,7 @@ class AppColors {
 
 class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
 
-  static const String baseUrl = "https://hawk4aynahtirk.pythonanywhere.com";
+  static const String baseUrl = kDebugMode ? "http://127.0.0.1:8000" : "https://hawk4aynahtirk.pythonanywhere.com";
   static String get secretKey => dotenv.env['API_SECRET_KEY'] ?? '';
 
   
@@ -307,6 +305,27 @@ class _WorkerOnboardingScreenState extends State<WorkerOnboardingScreen> {
           _buildHeader(
             "Worker Profile Setup",
             "Fill in your details to create your service profile."
+          ),
+
+          // Add the tagline
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
+            margin: const EdgeInsets.only(bottom: 16.0),
+            decoration: BoxDecoration(
+              color: AppColors.primaryTeal.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.primaryTeal.withOpacity(0.2)),
+            ),
+            child: Text(
+              "Bridging India's workforce with fair, direct hyperlocal opportunities—no middlemen, no contracts. Workers are the boss.",
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.primaryTeal,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
           ),
 
           

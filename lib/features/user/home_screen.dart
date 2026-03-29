@@ -1,7 +1,9 @@
 
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart'; 
@@ -11,6 +13,7 @@ import '../auth/auth_screen.dart';
 import 'bookings_screen.dart';
 import 'booking_creation_screen.dart';
 import 'general_booking_screen.dart';
+import '../../core/footer.dart';
 
 
 class HeroData {
@@ -514,6 +517,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
+  late final Stream<QuerySnapshot> _workersStream;
+  late Stream<QuerySnapshot> _upcomingBookingsStream;
+  Timer? _debounce;
 
   String _selectedCategory = '';
   String _userPin = '';
@@ -521,6 +527,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLocationLoading = false;
   String? _profilePicUrl;
   String _userName = 'Guest';
+
+  // Pagination
+  int _currentPage = 1;
+  final int _pageSize = 10;
 
   final List<Map<String, dynamic>> _categories = [
     {'name': 'Plumber', 'icon': Icons.plumbing},
@@ -538,7 +548,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(() => setState(() {}));
+    _workersStream = _buildWorkersStream();
+    _upcomingBookingsStream = _buildUpcomingBookingsStream();
+    _searchController.addListener(_onSearchChanged);
     if (!_isGuest) {
       _loadRegisteredUserData();
       
@@ -571,6 +583,45 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _detectLocation();
     }
+  }
+
+  _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      setState(() {
+        _currentPage = 1;
+      });
+    });
+  }
+
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _upcomingBookingsStream = _buildUpcomingBookingsStream();
+    }
+  }
+
+  Stream<QuerySnapshot> _buildWorkersStream() {
+    final query = FirebaseFirestore.instance.collection('workers').limit(10);
+    if (kIsWeb) {
+      return Stream<QuerySnapshot>.fromFuture(query.get());
+    }
+    return query.snapshots();
+  }
+
+  Stream<QuerySnapshot> _buildUpcomingBookingsStream() {
+    final query = FirebaseFirestore.instance
+        .collection('bookings')
+        .where('userId', isEqualTo: widget.userId)
+        .where('status', whereIn: ['Confirmed', 'Pending'])
+        .orderBy('dateTime', descending: false)
+        .limit(10);
+    if (kIsWeb) {
+      return Stream<QuerySnapshot>.fromFuture(query.get());
+    }
+    return query.snapshots();
   }
 
   @override
@@ -743,13 +794,15 @@ class _HomeScreenState extends State<HomeScreen> {
           child: const Icon(Icons.handyman_rounded, color: Colors.teal, size: 22),
         ),
         const SizedBox(width: 10),
-        const Text(
-          'Kaarya Seva',
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Colors.black87,
-            letterSpacing: -0.5,
+        Flexible(
+          child: Text(
+            'Kaarya Seva',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+              letterSpacing: -0.5,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -904,13 +957,7 @@ class _HomeScreenState extends State<HomeScreen> {
     
     
     return StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where('userId', isEqualTo: widget.userId)
-            .where('status', whereIn: ['Confirmed', 'Pending'])
-            .orderBy('dateTime', descending: false)
-            .limit(5)
-            .snapshots(),
+      stream: _upcomingBookingsStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             
@@ -1110,9 +1157,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
 
             StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('workers')
-                  .snapshots(),
+              stream: _workersStream,
               builder: (context, snapshot) {
 
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -1192,6 +1237,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   return ratingB.compareTo(ratingA);
                 });
 
+                // Pagination
+                final totalWorkers = workers.length;
+                final totalPages = totalWorkers > 0 ? (totalWorkers / _pageSize).ceil() : 1;
+                final effectiveCurrentPage = _currentPage.clamp(1, totalPages);
+                
+                final startIndex = (effectiveCurrentPage - 1) * _pageSize;
+                final endIndex = (startIndex + _pageSize).clamp(0, totalWorkers);
+                final paginatedWorkers = workers.sublist(startIndex, endIndex);
+
                 if (workers.isEmpty) {
                   return const SliverToBoxAdapter(
                     child: Padding(
@@ -1203,44 +1257,87 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }
 
-                if (width >= 900) {
-                  return SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    sliver: SliverGrid(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 2.8, 
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) => WorkerCard(
-                          worker: workers[index].data() as Map<String, dynamic>,
-                          workerId: workers[index].id,
+                // Workers list
+                return SliverList(
+                  delegate: SliverChildListDelegate([
+                    // Workers
+                    if (width >= 900)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 2.8, 
+                          ),
+                          itemCount: paginatedWorkers.length,
+                          itemBuilder: (context, index) => WorkerCard(
+                            worker: paginatedWorkers[index].data() as Map<String, dynamic>,
+                            workerId: paginatedWorkers[index].id,
+                            userId: widget.userId,
+                            userPin: _userPin, 
+                          ),
+                        ),
+                      )
+                    else
+                      ...paginatedWorkers.map((workerDoc) => Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: WorkerCard(
+                          worker: workerDoc.data() as Map<String, dynamic>,
+                          workerId: workerDoc.id,
                           userId: widget.userId,
                           userPin: _userPin, 
                         ),
-                        childCount: workers.length,
-                      ),
-                    ),
-                  );
-                }
+                      )),
 
-                return SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                      child: WorkerCard(
-                        worker: workers[index].data() as Map<String, dynamic>,
-                        workerId: workers[index].id,
-                        userId: widget.userId,
-                        userPin: _userPin, 
+                    // Pagination controls
+                    if (totalPages > 1)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              onPressed: effectiveCurrentPage > 1
+                                  ? () => setState(() => _currentPage--)
+                                  : null,
+                              icon: const Icon(Icons.chevron_left),
+                              color: effectiveCurrentPage > 1 ? Colors.teal : Colors.grey,
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.teal.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                '$effectiveCurrentPage of $totalPages',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.teal,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: effectiveCurrentPage < totalPages
+                                  ? () => setState(() => _currentPage++)
+                                  : null,
+                              icon: const Icon(Icons.chevron_right),
+                              color: effectiveCurrentPage < totalPages ? Colors.teal : Colors.grey,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    childCount: workers.length,
-                  ),
+                  ]),
                 );
               },
+            ),
+            // Footer
+            SliverToBoxAdapter(
+              child: const AppFooter(),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 40)),
           ],
@@ -1255,6 +1352,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return GestureDetector(
       onTap: () => setState(() {
         _selectedCategory = isSelected ? '' : category['name'];
+        _currentPage = 1; // Reset to first page when category changes
       }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),

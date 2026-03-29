@@ -2,15 +2,16 @@
 from flask import request, jsonify
 from datetime import datetime, timezone
 import uuid
-from .firebase_init import db
-from .constants import COL_BOOKINGS, COL_WORKERS, COL_CW, COL_OTP
-from .utils import require_secret, sanitize_phone, gen_otp, hash_code, now_ts, sim_sms_message, hours_to_mask
-from .config import FULL_MASK, T_START_OTP, T_END_OTP
-from .canonical_work import get_or_create_global_canonical_work
-from .worker_matching import get_best_workers_for_job
-from .transactions import cancel_booking_in_transaction, accept_booking_in_transaction, submit_rating_healer_transaction
-from .llm_functions import llm_analyze_review
+from ..firebase_init import db
+from ..constants import COL_BOOKINGS, COL_WORKERS, COL_CW, COL_OTP
+from ..utils import require_secret, sanitize_phone, gen_otp, hash_code, now_ts
+from ..config import FULL_MASK
+from ..canonical_work import get_or_create_global_canonical_work
+from ..worker_matching import get_best_workers_for_job
+from ..transactions import cancel_booking_in_transaction, accept_booking_in_transaction, submit_rating_healer_transaction
+from ..llm_functions import llm_analyze_review
 from google.cloud.firestore import FieldFilter
+from google.cloud.firestore_v1.transforms import Increment
 
 def register_booking_routes(app):
     @app.route("/cw/predict-multi", methods=["POST"])
@@ -22,7 +23,7 @@ def register_booking_routes(app):
         if not text:
             return jsonify({"error": "text required"}), 400
 
-        from .llm_functions import analyze_worker_profile_hierarchical
+        from ..llm_functions import analyze_worker_profile_hierarchical
         ai_jobs = analyze_worker_profile_hierarchical(text)
 
         results = []
@@ -64,8 +65,8 @@ def register_booking_routes(app):
         if not text:
             return jsonify({"error": "text required"}), 400
 
-        from .ai_utils import pinecone_embed_text, pinecone_query
-        from .llm_functions import llm_select_best_match, llm_generate_new_entity
+        from ..ai_utils import pinecone_embed_text, pinecone_query
+        from ..llm_functions import llm_select_best_match, llm_generate_new_entity
 
         try:
             embedding = pinecone_embed_text(text)
@@ -117,7 +118,7 @@ def register_booking_routes(app):
         if not tool_input:
             return jsonify({"error": "toolName required"}), 400
 
-        from .canonical_work import get_or_create_canonical_tool
+        from ..canonical_work import get_or_create_canonical_tool
 
         try:
             normalized = get_or_create_canonical_tool(tool_input)
@@ -142,12 +143,17 @@ def register_booking_routes(app):
         service_category = data.get("serviceCategory", "General").strip()
         required_tools = data.get("requiredTools", []) or []
 
+        # 1. ADD FLAG TO TRACK IF AI WAS USED
+        is_ai_booking = False
+
         if not candidate_workers_input:
+            is_ai_booking = True  # Tag as AI generated because no workers were manually provided
+            
             if len(notes) < 20:
                 return jsonify({"error": "Notes too short or no candidates provided"}), 400
 
-            from .ai_utils import pinecone_embed_text, pinecone_query
-            from .llm_functions import llm_select_best_match, llm_generate_new_entity
+            from ..ai_utils import pinecone_embed_text, pinecone_query
+            from ..llm_functions import llm_select_best_match, llm_generate_new_entity
             
             embedding = pinecone_embed_text(notes)
             matches = pinecone_query(embedding, top_k=3, filter_dict={"type": "job"})
@@ -176,7 +182,7 @@ def register_booking_routes(app):
 
         final_candidates = candidate_workers_input
         if not final_candidates:
-            best_workers = get_best_workers_for_job(service_type, service_category, required_tools, top_k=5)
+            best_workers = get_best_workers_for_job(service_type, service_category, required_tools, top_k=10)
             final_candidates = [w["workerId"] for w in best_workers]
             data["candidateWorkersDetails"] = best_workers
 
@@ -197,6 +203,7 @@ def register_booking_routes(app):
             booking_id = booking_ref.id
             now_ts_val = now_ts()
 
+            # 2. ADD AI METADATA TO THE DB OBJECT
             booking_obj = {
                 "userId": user_id,
                 "userPhone": sanitize_phone(data.get("userPhone")),
@@ -212,19 +219,8 @@ def register_booking_routes(app):
                 "notes": notes,
                 "location": data.get("location"),
                 "candidateWorkers": final_candidates,
-                "requiredTools": required_tools,
-                "createdAt": now_ts_val,
-                "updatedAt": now_ts_val,
-                "log": {"actions": []},
-                "payment": {
-                    "status": "pending",
-                    "method": data.get("paymentMethod", "cash")
-                },
-                # Escalation tracking for Multi-Channel Escalation Protocol
-                "escalationEnabled": True,
-                "lastEscalationLevel": 0,  # 0=none, 1=push, 2=sms, 3=ivr
-                "lastEscalationAt": None,
-                "assignedWorker": None  # Will be set when worker accepts
+                "isAIGenerated": is_ai_booking,                # <--- AI Flag
+                "requestedWorkerCount": len(final_candidates), # <--- Worker Count
             }
 
             batch = db.batch()
@@ -242,7 +238,7 @@ def register_booking_routes(app):
             batch.update(booking_ref, {"status": "b2"})
             batch.commit()
 
-            return jsonify({"ok": True, "bookingId": booking_id}), 200
+            return jsonify({"ok": True, "bookingId": booking_id, "matched": len(final_candidates)}), 200
 
         except Exception as e:
             print(f"Booking creation error: {e}")
@@ -267,7 +263,7 @@ def register_booking_routes(app):
 
             # After successful acceptance, trigger initial push notification for job assignment
             # This is part of the escalation protocol - Level 1 (immediate push)
-            from .notifications import escalate_job_assignment
+            from ..notifications import escalate_job_assignment
             escalate_job_assignment(bid, wid, 1)  # Level 1 = Push notification
 
             # Update escalation tracking
@@ -366,7 +362,7 @@ def register_booking_routes(app):
             batch.commit()
 
             # Trigger initial push notification for Start-OTP (Level 1 of escalation)
-            from .notifications import escalate_otp_delivery
+            from ..notifications import escalate_otp_delivery
             escalate_otp_delivery(bid, worker_id, "start", code, 1)
 
             # Update escalation tracking
@@ -474,7 +470,7 @@ def register_booking_routes(app):
             batch.commit()
 
             # Trigger initial push notification for End-OTP (Level 1 of escalation)
-            from .notifications import escalate_otp_delivery
+            from ..notifications import escalate_otp_delivery
             escalate_otp_delivery(bid, worker_id, "end", code, 1)
 
             # Update escalation tracking
@@ -534,11 +530,11 @@ def register_booking_routes(app):
             })
 
             w_ref = db.collection(COL_WORKERS).document(worker_id)
-            w_ref.update({"completedBookings": firestore.Increment(1), "updatedAt": now_ts_val})
+            w_ref.update({"completedBookings": Increment(1), "updatedAt": now_ts_val})
 
             try:
                 if cw_id:
-                    db.collection(COL_CW).document(cw_id).update({"totalJobsGlobal": firestore.Increment(1)})
+                    db.collection(COL_CW).document(cw_id).update({"totalJobsGlobal": Increment(1)})
             except Exception as e:
                 print(f"Error updating CW stats: {e}")
 
@@ -740,7 +736,7 @@ def register_booking_routes(app):
                     # Check if this level has already been sent
                     last_escalation = booking_data.get("lastEscalationLevel", 0)
                     if escalation_level > last_escalation:
-                        from .notifications import escalate_job_assignment
+                        from ..notifications import escalate_job_assignment
                         escalate_job_assignment(booking_id, assigned_worker, escalation_level)
 
                         # Update the booking with new escalation level

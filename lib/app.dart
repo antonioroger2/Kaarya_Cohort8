@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme.dart';
+import 'core/design_tokens.dart';
 import 'features/auth/auth_wrapper.dart';
 import 'features/auth/worker_onboarding_screen.dart';
 
@@ -18,29 +19,29 @@ class KaaryaConnectApp extends ConsumerWidget {
         primarySwatch: Colors.teal,
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.teal,
-          secondary: Colors.orange,
-          tertiary: Colors.pink,
+          seedColor: AppDesignTokens.primary,
+          secondary: AppDesignTokens.accent,
+          tertiary: AppDesignTokens.aiBlue,
         ),
-        scaffoldBackgroundColor: Colors.teal[50],
+        scaffoldBackgroundColor: AppDesignTokens.surface,
         
         // Custom Theme Extension
         extensions: [
-          const DoodleBackgroundTheme(
-            primaryColor: Colors.teal,
-            secondaryColor: Colors.orange,
+          DoodleBackgroundTheme(
+            primaryColor: AppDesignTokens.primary,
+            secondaryColor: AppDesignTokens.accent,
             patternDensity: 0.3,
           ),
         ],
 
         // AppBar Theme
         appBarTheme: AppBarTheme(
-          backgroundColor: Colors.teal,
-          foregroundColor: Colors.white,
+          backgroundColor: AppDesignTokens.primary,
+          foregroundColor: Colors.black,
           elevation: 0,
           centerTitle: true,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(bottom: Radius.circular(16))
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(bottom: AppDesignTokens.radius)
           ),
         ),
 
@@ -48,7 +49,7 @@ class KaaryaConnectApp extends ConsumerWidget {
         cardTheme: ThemeData().cardTheme.copyWith(
           elevation: 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.all(AppDesignTokens.cardRadius),
           ),
           clipBehavior: Clip.antiAlias,
         ),
@@ -56,11 +57,11 @@ class KaaryaConnectApp extends ConsumerWidget {
         // ElevatedButton Theme
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.teal,
+            backgroundColor: AppDesignTokens.primary,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.all(AppDesignTokens.radiusSm),
             ),
           ),
         ),
@@ -68,18 +69,18 @@ class KaaryaConnectApp extends ConsumerWidget {
         // InputDecoration Theme
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.teal[100],
+          fillColor: AppDesignTokens.surface,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.all(AppDesignTokens.radiusSm),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.teal[300]!),
+            borderRadius: BorderRadius.all(AppDesignTokens.radiusSm),
+            borderSide: BorderSide(color: AppDesignTokens.primary.withOpacity(0.3)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.teal),
+            borderRadius: BorderRadius.all(AppDesignTokens.radiusSm),
+            borderSide: BorderSide(color: AppDesignTokens.primary),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),

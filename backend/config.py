@@ -2,7 +2,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
 
 # --- CONFIGURATION ---
 API_SECRET = os.environ.get("OTP_API_SECRET")

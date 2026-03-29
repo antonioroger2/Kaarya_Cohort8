@@ -229,7 +229,14 @@ class _KYCScreenState extends ConsumerState<KYCScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('KYC Verification'),
+        title: const Text(
+          'KYC Verification',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
       ),
@@ -240,7 +247,7 @@ class _KYCScreenState extends ConsumerState<KYCScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (header != null) header,
+                  ?header,
                   const SizedBox(height: 12),
                   Card(
                     elevation: 2,

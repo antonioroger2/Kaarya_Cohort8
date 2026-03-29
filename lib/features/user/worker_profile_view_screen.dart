@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'booking_creation_screen.dart';
 
 class WorkerProfileViewScreen extends StatefulWidget {
@@ -20,6 +21,32 @@ class WorkerProfileViewScreen extends StatefulWidget {
 }
 
 class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
+  Map<String, dynamic>? _pendingBooking;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchPendingBooking();
+  }
+
+  Future<void> _fetchPendingBooking() async {
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('bookings')
+          .where('userId', isEqualTo: widget.userId)
+          .where('workerId', isEqualTo: widget.workerId)
+          .where('status', whereIn: ['b1', 'b2'])
+          .limit(1)
+          .get();
+      if (query.docs.isNotEmpty) {
+        setState(() {
+          _pendingBooking = query.docs.first.data();
+        });
+      }
+    } catch (e) {
+      // Handle error if needed
+    }
+  }
 
   Future<void> _onRefresh() async {
     await Future.delayed(const Duration(milliseconds: 500));
@@ -102,8 +129,28 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
   }
 
   
+  String _getButtonText() {
+    if (_pendingBooking != null) {
+      final date = _pendingBooking!['bookingDate'];
+      DateTime? bookingDate;
+      if (date is Timestamp) {
+        bookingDate = date.toDate();
+      } else if (date is String) {
+        bookingDate = DateTime.tryParse(date);
+      }
+      if (bookingDate != null) {
+        final startHour = _pendingBooking!['startHour'] ?? 0;
+        final time = DateTime(bookingDate.year, bookingDate.month, bookingDate.day, startHour);
+        return 'Booking @ ${DateFormat('d MMM yy h:mm a').format(time)}';
+      }
+    }
+    return 'BOOK NOW';
+  }
+
+  bool get _isBookDisabled => _pendingBooking != null;
+
   void _onBook(BuildContext context) {
-                Navigator.of(context).push(
+    Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => BookingCreationScreen(
           userId: widget.userId,
@@ -287,7 +334,7 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
                 title,
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
               ),
-              if (action != null) action,
+              ?action,
             ],
           ),
           const Divider(height: 24, thickness: 0.5),
@@ -502,23 +549,23 @@ class _WorkerProfileViewScreenState extends State<WorkerProfileViewScreen> {
           child: SizedBox(
             height: 54,
             child: ElevatedButton(
-              onPressed: () => _onBook(context),
+              onPressed: _isBookDisabled ? null : () => _onBook(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.deepOrange,
+                backgroundColor: _isBookDisabled ? Colors.grey : Colors.deepOrange,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
                 elevation: 0,
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.calendar_today, size: 20),
-                  SizedBox(width: 10),
+                  Icon(_isBookDisabled ? Icons.access_time : Icons.calendar_today, size: 20),
+                  const SizedBox(width: 10),
                   Text(
-                    'BOOK NOW',
-                    style: TextStyle(
+                    _getButtonText(),
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 0.5,

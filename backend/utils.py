@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request
+from google.cloud.firestore_v1.transforms import SERVER_TIMESTAMP
 from .config import API_SECRET, HOUR_OFFSET, SLOT_COUNT
 from .firebase_init import db
 
@@ -19,7 +20,7 @@ def require_secret(f):
     return wrapper
 
 def now_ts():
-    return db.firestore.SERVER_TIMESTAMP
+    return SERVER_TIMESTAMP
 
 def sanitize_phone(phone):
     if not phone: return None

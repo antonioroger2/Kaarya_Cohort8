@@ -1,7 +1,6 @@
 # main.py
 from flask import Flask
 from flask_cors import CORS
-from .firebase_init import db  # Ensure Firebase is initialized
 from .routes.routes_auth import register_auth_routes
 from .routes.routes_booking import register_booking_routes
 

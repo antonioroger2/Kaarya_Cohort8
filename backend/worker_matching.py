@@ -26,7 +26,7 @@ def calculate_worker_score(worker, cw_name, required_tools):
         "globalRating": global_rating
     }
 
-def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=5):
+def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=10):
     candidates = []
 
     try:

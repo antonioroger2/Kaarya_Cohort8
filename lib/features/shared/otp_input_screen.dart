@@ -99,8 +99,16 @@ class _OtpInputScreenState extends State<OtpInputScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Enter ${widget.otpType == 'start' ? 'Start' : 'End'} OTP'),
+        title: Text(
+          'Enter ${widget.otpType == 'start' ? 'Start' : 'End'} OTP',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: widget.otpType == 'start' ? Colors.blue : Colors.green,
+        foregroundColor: Colors.white,
       ),
       body: DoodleBackground(
         child: Center(

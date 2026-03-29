@@ -16,20 +16,47 @@ class InboxScreen extends StatefulWidget {
 }
 
 class _InboxScreenState extends State<InboxScreen> {
+  late Stream<QuerySnapshot> _notificationsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _notificationsStream = _buildNotificationsStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant InboxScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      _notificationsStream = _buildNotificationsStream();
+    }
+  }
+
+  Stream<QuerySnapshot> _buildNotificationsStream() {
+    return FirebaseFirestore.instance
+        .collection('notifications')
+        .where('recipientId', isEqualTo: widget.userId)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inbox'),
+        title: const Text(
+          'Inbox',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
+        foregroundColor: Colors.white,
       ),
       body: DoodleBackground(
         child: StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('notifications')
-              .where('recipientId', isEqualTo: widget.userId)
-              .orderBy('createdAt', descending: true)
-              .snapshots(),
+          stream: _notificationsStream,
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());

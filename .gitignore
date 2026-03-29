@@ -47,3 +47,4 @@ windows/build/
 # PythonAnywhere / Server
 .env
 __pycache__/
+backend/firebase-service-account-key.json

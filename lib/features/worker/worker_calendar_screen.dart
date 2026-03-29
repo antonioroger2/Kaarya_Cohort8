@@ -30,19 +30,26 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Calendar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+            const Text(
+              'Calendar',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+                color: Colors.teal,
+                fontSize: 18,
+              ),
+            ),
             Text(
               DateFormat('MMMM yyyy').format(_selectedDate),
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
+        elevation: 0,
+        backgroundColor: Colors.white,
+        iconTheme: IconThemeData(color: Colors.black),
         actions: [
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance

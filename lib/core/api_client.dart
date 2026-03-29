@@ -7,7 +7,7 @@ import 'package:http_parser/http_parser.dart';
 
 class ApiClient {
 
-  static const String _baseUrl = "https://hawk4aynahtirk.pythonanywhere.com";
+  static String get _baseUrl => kDebugMode ? "http://127.0.0.1:${dotenv.get('PORT', fallback: '8000')}" : "https://hawk4aynahtirk.pythonanywhere.com";
 
   static String get _apiSecret => dotenv.env['API_SECRET_KEY'] ?? '';
 

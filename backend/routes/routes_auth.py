@@ -3,10 +3,10 @@ from flask import request, jsonify
 from firebase_admin import auth
 import uuid
 from datetime import datetime, timedelta, timezone
-from .firebase_init import db
-from .constants import COL_OTP, COL_VERIFIED, EMAIL_SUFFIX
-from .utils import require_secret, sanitize_phone, gen_otp, hash_code, now_ts, slugify
-from .config import API_SECRET
+from ..firebase_init import db
+from ..constants import COL_OTP, COL_VERIFIED
+from ..utils import require_secret, sanitize_phone, gen_otp, hash_code, now_ts, slugify
+from ..config import API_SECRET, EMAIL_SUFFIX
 
 def _handle_auth_creation(uid, password, name):
     try:
@@ -18,6 +18,9 @@ def _handle_auth_creation(uid, password, name):
         )
         return True, None
     except auth.EmailAlreadyExistsError:
+        # This is not an error in our case, just means the user exists
+        return True, None
+    except auth.UidAlreadyExistsError:
         return True, None
     except Exception as e:
         return False, str(e)
@@ -82,8 +85,11 @@ def register_auth_routes(app):
     @app.route("/complete-signup", methods=["POST"])
     @require_secret
     def complete_signup():
-        from .canonical_work import get_or_create_global_canonical_work
-        from .llm_functions import analyze_worker_profile_hierarchical
+        from ..canonical_work import get_or_create_global_canonical_work
+        from ..llm_functions import analyze_worker_profile_hierarchical
+
+        if db is None:
+            return jsonify({"error": "Database not initialized"}), 503
 
         try:
             data = request.json

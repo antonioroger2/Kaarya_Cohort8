@@ -45,6 +45,7 @@ class ProfileScreenState extends State<ProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isEditing = false;
   bool _isLoading = false; 
+  late Stream<DocumentSnapshot> _profileStream;
 
   
   final _nameController = TextEditingController();
@@ -66,6 +67,25 @@ class ProfileScreenState extends State<ProfileScreen> {
   String _formatCurrency(num val) {
     final formatter = NumberFormat.currency(locale: 'en_IN', symbol: '₹', decimalDigits: 0);
     return formatter.format(val);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _profileStream = _buildProfileStream();
+  }
+
+  @override
+  void didUpdateWidget(covariant ProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId || oldWidget.isWorker != widget.isWorker) {
+      _profileStream = _buildProfileStream();
+    }
+  }
+
+  Stream<DocumentSnapshot> _buildProfileStream() {
+    final collection = widget.isWorker ? 'workers' : 'users';
+    return FirebaseFirestore.instance.collection(collection).doc(widget.userId).snapshots();
   }
 
   @override
@@ -481,18 +501,21 @@ class ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final collection = widget.isWorker ? 'workers' : 'users';
-
     return Scaffold(
       backgroundColor: AppColors.primaryBackground,
       appBar: AppBar(
         title: Text(
-          widget.isWorker ? 'My Worker Profile' : 'My Profile',
-          style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87),
+          widget.isWorker ? 'Profile' : 'Profile',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
         ),
         centerTitle: false,
         elevation: 0,
         backgroundColor: AppColors.secondaryBackground,
+        iconTheme: IconThemeData(color: Colors.black),
         actions: [
           if (!_isEditing)
             IconButton(
@@ -510,7 +533,7 @@ class ProfileScreenState extends State<ProfileScreen> {
         ],
       ),
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection(collection).doc(widget.userId).snapshots(),
+        stream: _profileStream,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

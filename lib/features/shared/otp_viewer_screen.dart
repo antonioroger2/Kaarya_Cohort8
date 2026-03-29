@@ -157,8 +157,16 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.otpType == 'start' ? 'Start' : 'End'} Job OTP'),
+        title: Text(
+          '${widget.otpType == 'start' ? 'Start' : 'End'} Job OTP',
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            color: Colors.teal,
+            fontSize: 18,
+          ),
+        ),
         backgroundColor: widget.otpType == 'start' ? Colors.blue : Colors.green,
+        foregroundColor: Colors.white,
       ),
       body: DoodleBackground(
         child: Center(

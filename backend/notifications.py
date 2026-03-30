@@ -1,8 +1,9 @@
 import os
 import requests
 from firebase_admin import messaging
-from firebase_init import db
-from constants import COL_BOOKINGS, COL_WORKERS
+from google.cloud import firestore
+from .firebase_init import db
+from .constants import COL_BOOKINGS, COL_WORKERS
 
 # ==========================================
 # 1. CORE NOTIFICATION SENDERS (ACTUAL APIs)
@@ -33,6 +34,28 @@ def send_fcm_push(worker_id: str, title: str, body: str, data: dict = None) -> b
     except Exception as e:
         print(f"FCM Push Failed: {e}")
         return False
+
+
+def _save_inbox_message(recipient_id: str, payload: dict):
+    """Save a notification-like message under inbox/<userId>/content and prune to last 5."""
+    try:
+        from .utils import now_ts
+
+        payload = {**payload}
+        payload.setdefault("isRead", False)
+        payload.setdefault("createdAt", now_ts())
+
+        content_ref = db.collection("inbox").document(recipient_id).collection("content")
+        content_ref.add(payload)
+
+        # Keep only latest 5 messages
+        older_docs = content_ref.order_by("createdAt", direction=firestore.Query.DESCENDING).offset(5).stream()
+        batch = db.batch()
+        for doc in older_docs:
+            batch.delete(doc.reference)
+        batch.commit()
+    except Exception as e:
+        print(f"Inbox save failed for {recipient_id}: {e}")
 
 
 def send_twilio_sms(phone_number: str, message_body: str) -> bool:
@@ -118,12 +141,19 @@ def escalate_job_assignment(booking_id: str, worker_id: str, escalation_level: i
         title = "New Job Request! 🚨"
         body = f"Job at {locality} on {date}, {from_time}-{to_time}. Earn ₹{wage}."
         data = {"booking_id": booking_id, "action": "open_job_request"}
+        _save_inbox_message(worker_id, {
+            "recipientId": worker_id,
+            "title": title,
+            "message": body,
+            "type": "new_booking_request",
+            "bookingId": booking_id,
+        })
         send_fcm_push(worker_id, title, body, data)
 
     elif escalation_level == 2:
         # Level 2: SMS
-        from constants import T_JOB_ALERT, MISSED_CALL_NO
-        from utils import sim_sms_message
+        from .constants import T_JOB_ALERT, MISSED_CALL_NO
+        from .utils import sim_sms_message
 
         message = sim_sms_message(
             T_JOB_ALERT,
@@ -166,12 +196,22 @@ def escalate_otp_delivery(booking_id: str, worker_id: str, otp_type: str, otp_co
         title = "Job Start OTP" if otp_type == "start" else "Job End OTP & Payment"
         body = f"Your code for the {locality} job is: {otp_code}. Ask the customer to enter this."
         data = {"booking_id": booking_id, "otp": otp_code, "type": otp_type}
+        notif_type = "job_confirmed" if otp_type == "start" else "job_completed"
+        _save_inbox_message(worker_id, {
+            "recipientId": worker_id,
+            "title": title,
+            "message": body,
+            "type": notif_type,
+            "bookingId": booking_id,
+            "otpCode": otp_code,
+            "otpType": otp_type,
+        })
         send_fcm_push(worker_id, title, body, data)
 
     elif escalation_level == 2:
         # Level 2: SMS
-        from constants import T_START_OTP, T_END_OTP
-        from utils import sim_sms_message
+        from .constants import T_START_OTP, T_END_OTP
+        from .utils import sim_sms_message
         
         hours = b_data.get("endHour", 10) - b_data.get("startHour", 8)
         wage = b_data.get("wage", 0) + b_data.get("ta", 0)

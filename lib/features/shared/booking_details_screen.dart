@@ -116,7 +116,23 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
   // ── All original business logic preserved unchanged ──────────────────────
 
   Future<void> _attemptStartJob(Map<String, dynamic> bookingData) async {
-    final date = (bookingData['bookingDate'] as Timestamp).toDate();
+    DateTime? date;
+    if (bookingData['appointmentDate'] is Timestamp) {
+      date = (bookingData['appointmentDate'] as Timestamp).toDate();
+    } else if (bookingData['bookingDate'] is Timestamp) {
+      date = (bookingData['bookingDate'] as Timestamp).toDate();
+    } else if (bookingData['date'] is String) {
+      try {
+        date = DateFormat('yyyy-MM-dd').parse(bookingData['date']);
+      } catch (_) {
+        date = null;
+      }
+    }
+
+    if (date == null) {
+      _showError("Missing appointment date on booking.");
+      return;
+    }
     final startHour = bookingData['startHour'] ?? 0;
     final scheduledStart = DateTime(date.year, date.month, date.day, startHour);
     final now = DateTime.now();
@@ -143,6 +159,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             bookingId: widget.bookingId,
             otpType: 'start',
             correlationId: response['correlationId'],
+            otpCode: response['otp'] as String?,
           ),
         )).then((_) => setState(() {}));
       }
@@ -167,6 +184,7 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
             bookingId: widget.bookingId,
             otpType: 'end',
             correlationId: response['correlationId'],
+            otpCode: response['otp'] as String?,
           ),
         )).then((_) => setState(() {}));
       }
@@ -378,7 +396,10 @@ class _BookingDetailsScreenState extends State<BookingDetailsScreen> {
 
     final scheduledDate = dateStr != null
         ? DateFormat('yyyy-MM-dd').parse(dateStr)
-        : (bookingData['bookingDate'] as Timestamp? ?? Timestamp.now()).toDate();
+      : (bookingData['appointmentDate'] as Timestamp?
+        ?? bookingData['bookingDate'] as Timestamp?
+        ?? Timestamp.now())
+          .toDate();
 
     final startDateTime = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day, startHour);
     final endDateTime   = DateTime(scheduledDate.year, scheduledDate.month, scheduledDate.day, endHour);

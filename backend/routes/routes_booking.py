@@ -683,7 +683,7 @@ Score each candidate from 0.0 to 1.0 for how well it matches. Return ONLY JSON o
                 "lastEscalationAt": now_ts()
             })
 
-            return jsonify({"ok": True, "correlationId": cid}), 200
+            return jsonify({"ok": True, "correlationId": cid, "otp": code}), 200
 
         except Exception as e:
             print(f"Generate Start OTP Error: {e}")
@@ -795,7 +795,7 @@ Score each candidate from 0.0 to 1.0 for how well it matches. Return ONLY JSON o
                 "lastEscalationAt": now_ts()
             })
 
-            return jsonify({"ok": True, "correlationId": cid}), 200
+            return jsonify({"ok": True, "correlationId": cid, "otp": code}), 200
         except Exception as e:
             print(f"Generate End OTP Error: {e}")
             return jsonify({"error": str(e)}), 500

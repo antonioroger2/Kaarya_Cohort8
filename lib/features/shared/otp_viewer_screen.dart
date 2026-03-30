@@ -8,12 +8,14 @@ class OtpViewerScreen extends StatefulWidget {
   final String bookingId;
   final String otpType; // 'start' or 'end'
   final String correlationId;
+  final String? otpCode;
 
   const OtpViewerScreen({
     super.key,
     required this.bookingId,
     required this.otpType,
     required this.correlationId,
+    this.otpCode,
   });
 
   @override
@@ -26,10 +28,12 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
   Timer? _timer;
   int _remainingSeconds = 600; // 10 minutes
   bool _isExpired = false;
+  String? _otpCode;
 
   @override
   void initState() {
     super.initState();
+    _otpCode = widget.otpCode;
     _fetchOtpCode();
     _startTimer();
   }
@@ -53,39 +57,26 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
   }
 
   Future<void> _fetchOtpCode() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = false;
+      _error = null;
+    });
 
-    try {
-      // For demo purposes, we'll simulate getting the OTP code
-      // In real implementation, this would come from the backend response
-      // For now, we'll show a placeholder
-      await Future.delayed(const Duration(seconds: 2)); // Simulate API call
-
-      // In a real implementation, the OTP would be retrieved from the backend
-      // For demo, we'll show that the OTP has been sent
-      setState(() {
-        _isLoading = false;
-      });
-
-      // Show alert that OTP has been created
-      _showOtpCreatedAlert();
-
-    } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
+    // Show confirmation when an OTP is already available (first open)
+    if (_otpCode != null) {
+      _showOtpCreatedAlert(otpCode: _otpCode);
     }
   }
 
-  void _showOtpCreatedAlert() {
+  void _showOtpCreatedAlert({String? otpCode}) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('OTP Created'),
         content: Text(
-          'A ${widget.otpType == 'start' ? 'Start' : 'End'} OTP has been generated and sent to the worker via app notification (demo). '
-          'Ask the worker to check their app and read the 6-digit code aloud for verification.'
+          otpCode != null
+              ? 'OTP: $otpCode\n\nShare this ${widget.otpType == 'start' ? 'start' : 'end'} code with the worker or read it aloud to verify.'
+              : 'A ${widget.otpType == 'start' ? 'Start' : 'End'} OTP has been generated and sent to the worker via app notification. Ask the worker to read the 6-digit code aloud for verification.'
         ),
         actions: [
           TextButton(
@@ -103,34 +94,33 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${remainingSeconds.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _regenerateOtp() async {
-    if (_remainingSeconds > 0) {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Regenerate OTP'),
-          content: const Text('Are you sure you want to regenerate the OTP? The previous OTP will become invalid.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Regenerate'),
-            ),
-          ],
-        ),
-      );
+  Future<void> _reRequestOtp() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Re-request OTP'),
+        content: const Text('Send a fresh OTP via in-app notification? The previous code will be invalidated.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Send OTP'),
+          ),
+        ],
+      ),
+    );
 
-      if (confirmed != true) return;
-    }
+    if (confirmed != true) return;
 
     // Reset timer
     _timer?.cancel();
     setState(() {
       _remainingSeconds = 600;
       _isExpired = false;
+      _isLoading = true;
     });
     _startTimer();
 
@@ -143,12 +133,15 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
       if (response['ok'] == true) {
         setState(() {
           _error = null;
+          _otpCode = response['otp'] as String?;
+          _isLoading = false;
         });
-        _showOtpCreatedAlert();
+        _showOtpCreatedAlert(otpCode: _otpCode);
       }
     } catch (e) {
       setState(() {
         _error = e.toString();
+        _isLoading = false;
       });
     }
   }
@@ -236,6 +229,42 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
                 ),
                 const SizedBox(height: 32),
 
+                // OTP display if available
+                if (!_isLoading && _otpCode != null)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: Column(
+                      children: [
+                        Text(
+                          'Your ${widget.otpType == 'start' ? 'Start' : 'End'} OTP',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          _otpCode!,
+                          style: const TextStyle(fontSize: 32, letterSpacing: 4, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text('Share this code only with the worker on-site.')
+                      ],
+                    ),
+                  ),
+
+                if (!_isLoading && _otpCode == null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      'Waiting for OTP. It will appear here and in the worker inbox.',
+                      style: TextStyle(color: Colors.grey[700]),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
                 // Status
                 if (_isLoading)
                   const CircularProgressIndicator()
@@ -315,17 +344,16 @@ class _OtpViewerScreenState extends State<OtpViewerScreen> {
 
                 const SizedBox(height: 32),
 
-                // Regenerate button
-                if (_isExpired || _error != null)
-                  ElevatedButton.icon(
-                    onPressed: _regenerateOtp,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Regenerate OTP'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: widget.otpType == 'start' ? Colors.blue : Colors.green,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                    ),
+                // Re-request button (allowed any time; old code invalidated server-side)
+                ElevatedButton.icon(
+                  onPressed: _reRequestOtp,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Re-request OTP'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: widget.otpType == 'start' ? Colors.blue : Colors.green,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
                   ),
+                ),
 
                 // Back button
                 const SizedBox(height: 16),

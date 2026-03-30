@@ -60,7 +60,7 @@ class _WorkerJobsScreenState extends State<WorkerJobsScreen> with SingleTickerPr
         .collectionGroup('workerRequests')
         .where('workerId', isEqualTo: widget.workerId)
         .where('status', isEqualTo: 'pending')
-        .orderBy('sentAt', descending: true)
+        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 

@@ -106,7 +106,9 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
                     
                     DateTime? jobDate;
                     
-                    if (data['bookingDate'] is Timestamp) {
+                    if (data['appointmentDate'] is Timestamp) {
+                      jobDate = (data['appointmentDate'] as Timestamp).toDate();
+                    } else if (data['bookingDate'] is Timestamp) {
                       jobDate = (data['bookingDate'] as Timestamp).toDate();
                     } else if (data['date'] is String) {
                       try {
@@ -214,8 +216,16 @@ class _WorkerCalendarScreenState extends State<WorkerCalendarScreen> {
     final data = doc.data() as Map<String, dynamic>;
     
     DateTime date;
-    if (data['bookingDate'] is Timestamp) {
+    if (data['appointmentDate'] is Timestamp) {
+      date = (data['appointmentDate'] as Timestamp).toDate();
+    } else if (data['bookingDate'] is Timestamp) {
       date = (data['bookingDate'] as Timestamp).toDate();
+    } else if (data['date'] is String) {
+      try {
+        date = DateFormat('yyyy-MM-dd').parse(data['date']);
+      } catch (_) {
+        date = DateTime.now();
+      }
     } else {
       date = DateTime.now(); 
     }

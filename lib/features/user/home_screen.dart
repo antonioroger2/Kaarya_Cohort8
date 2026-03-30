@@ -381,18 +381,51 @@ class BookingSliderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = booking['status'] ?? 'Pending';
+    final statusRaw = (booking['status'] ?? '').toString();
     final service = booking['service'] ?? 'Service Appointment';
     final worker = booking['workerName'] ?? 'Professional';
     
     
     String dateDisplay = 'Date/Time Unknown';
-    if (booking.containsKey('dateTime') && booking['dateTime'] is Timestamp) {
-      final dateTime = (booking['dateTime'] as Timestamp).toDate();
-      dateDisplay = DateFormat('EEE, MMM d, h:mm a').format(dateTime);
+    final Timestamp? appointmentTs = booking['appointmentDate'] as Timestamp?;
+    final Timestamp? legacyDateTs = booking['dateTime'] as Timestamp?;
+    final DateTime? appointment = (appointmentTs ?? legacyDateTs)?.toDate();
+    if (appointment != null) {
+      dateDisplay = DateFormat('EEE, MMM d, h:mm a').format(appointment);
     }
-    
-    final statusColor = status == 'Confirmed' ? Colors.lightGreen.shade400 : Colors.amber.shade400;
+
+    final normalizedStatus = statusRaw.toLowerCase();
+    String statusLabel;
+    Color statusColor;
+    switch (normalizedStatus) {
+      case 'b1':
+        statusLabel = 'Request Sent';
+        statusColor = Colors.amber.shade400;
+        break;
+      case 'b2':
+        statusLabel = 'Pending';
+        statusColor = Colors.amber.shade400;
+        break;
+      case 'a1':
+        statusLabel = 'Scheduled';
+        statusColor = Colors.blue.shade400;
+        break;
+      case 'w1':
+        statusLabel = 'Worker En Route';
+        statusColor = Colors.purple.shade300;
+        break;
+      case 'w2':
+        statusLabel = 'In Progress';
+        statusColor = Colors.teal.shade400;
+        break;
+      case 'e3':
+        statusLabel = 'Completed';
+        statusColor = Colors.green.shade400;
+        break;
+      default:
+        statusLabel = statusRaw.isEmpty ? 'Pending' : statusRaw;
+        statusColor = Colors.amber.shade400;
+    }
 
     return Container(
       width: 280, 
@@ -432,7 +465,7 @@ class BookingSliderCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  status,
+                  statusLabel,
                   style: TextStyle(
                       color: statusColor.withOpacity(0.9),
                       fontWeight: FontWeight.w600,
@@ -619,8 +652,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final query = FirebaseFirestore.instance
         .collection('bookings')
         .where('userId', isEqualTo: widget.userId)
-        .where('status', whereIn: ['Confirmed', 'Pending'])
-        .orderBy('dateTime', descending: false)
+        .where('status', whereIn: ['b1', 'b2', 'a1'])
+        .orderBy('appointmentDate', descending: false)
         .limit(10);
     if (kIsWeb) {
       return Stream<QuerySnapshot>.fromFuture(query.get());

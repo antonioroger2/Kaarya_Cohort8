@@ -34,10 +34,12 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Stream<QuerySnapshot> _buildNotificationsStream() {
     return FirebaseFirestore.instance
-        .collection('notifications')
-        .where('recipientId', isEqualTo: widget.userId)
-        .orderBy('createdAt', descending: true)
-        .snapshots();
+      .collection('inbox')
+      .doc(widget.userId)
+      .collection('content')
+      .orderBy('createdAt', descending: true)
+      .limit(5)
+      .snapshots();
   }
 
   @override
@@ -167,8 +169,10 @@ class _InboxScreenState extends State<InboxScreen> {
                       onTap: () async {
                         // Mark as read
                         if (!isRead) {
-                          await FirebaseFirestore.instance
-                              .collection('notifications')
+                            await FirebaseFirestore.instance
+                              .collection('inbox')
+                              .doc(widget.userId)
+                              .collection('content')
                               .doc(notification.id)
                               .update({'isRead': true});
                         }

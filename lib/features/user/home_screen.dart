@@ -527,10 +527,14 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLocationLoading = false;
   String? _profilePicUrl;
   String _userName = 'Guest';
+  double? _userLat;
+  double? _userLon;
 
   // Pagination
   int _currentPage = 1;
   final int _pageSize = 10;
+
+  final Set<String> _workersCurrentlyGeocoding = {};
 
   final List<Map<String, dynamic>> _categories = [
     {'name': 'Plumber', 'icon': Icons.plumbing},
@@ -660,6 +664,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _isLocationLoading = true;
       _locationName = 'Locating...';
       _userPin = ''; 
+      _userLat = null;
+      _userLon = null;
     });
 
     try {
@@ -689,6 +695,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+
+      _userLat = position.latitude;
+      _userLon = position.longitude;
 
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse?format=json&lat=${position.latitude}&lon=${position.longitude}&addressdetails=1',
@@ -721,6 +730,46 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Location detect error: $e');
     } finally {
       if (mounted) setState(() => _isLocationLoading = false);
+    }
+  }
+
+  Future<void> _checkAndUpsertWorkerLocation(String workerId, Map<String, dynamic> data) async {
+    if ((data.containsKey('lat') && data.containsKey('lon')) || _workersCurrentlyGeocoding.contains(workerId)) {
+      return;
+    }
+
+    final String pin = data['pincode']?.toString().trim() ?? '';
+    final String locality = data['locality']?.toString().trim() ?? '';
+
+    if (pin.isEmpty) return;
+
+    _workersCurrentlyGeocoding.add(workerId);
+
+    try {
+      final query = Uri.encodeComponent("$locality $pin India");
+      final url = Uri.parse('https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=1');
+
+      final response = await http.get(url, headers: {'User-Agent': 'KaaryaConnectApp'});
+
+      if (response.statusCode == 200) {
+        final List results = jsonDecode(response.body);
+        if (results.isNotEmpty) {
+          final lat = double.tryParse(results[0]['lat'].toString());
+          final lon = double.tryParse(results[0]['lon'].toString());
+
+          if (lat != null && lon != null) {
+            await FirebaseFirestore.instance.collection('workers').doc(workerId).update({
+              'lat': lat,
+              'lon': lon,
+            });
+            debugPrint('Upserted GPS for worker $workerId');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Geocoding failed for $workerId: $e');
+    } finally {
+      _workersCurrentlyGeocoding.remove(workerId);
     }
   }
 
@@ -1274,24 +1323,38 @@ class _HomeScreenState extends State<HomeScreen> {
                             childAspectRatio: 2.8, 
                           ),
                           itemCount: paginatedWorkers.length,
-                          itemBuilder: (context, index) => WorkerCard(
-                            worker: paginatedWorkers[index].data() as Map<String, dynamic>,
-                            workerId: paginatedWorkers[index].id,
-                            userId: widget.userId,
-                            userPin: _userPin, 
-                          ),
+                          itemBuilder: (context, index) {
+                            final workerData = paginatedWorkers[index].data() as Map<String, dynamic>;
+                            _checkAndUpsertWorkerLocation(paginatedWorkers[index].id, workerData);
+
+                            return WorkerCard(
+                              worker: workerData,
+                              workerId: paginatedWorkers[index].id,
+                              userId: widget.userId,
+                              userPin: _userPin,
+                              userLat: _userLat,
+                              userLon: _userLon,
+                            );
+                          },
                         ),
                       )
                     else
-                      ...paginatedWorkers.map((workerDoc) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                        child: WorkerCard(
-                          worker: workerDoc.data() as Map<String, dynamic>,
-                          workerId: workerDoc.id,
-                          userId: widget.userId,
-                          userPin: _userPin, 
-                        ),
-                      )),
+                      ...paginatedWorkers.map((workerDoc) {
+                        final workerData = workerDoc.data() as Map<String, dynamic>;
+                        _checkAndUpsertWorkerLocation(workerDoc.id, workerData);
+
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          child: WorkerCard(
+                            worker: workerData,
+                            workerId: workerDoc.id,
+                            userId: widget.userId,
+                            userPin: _userPin,
+                            userLat: _userLat,
+                            userLon: _userLon,
+                          ),
+                        );
+                      }),
 
                     // Pagination controls
                     if (totalPages > 1)

@@ -7,6 +7,31 @@ from .firebase_init import db
 from .constants import COL_CATEGORIES, COL_TOOLS, COL_CW
 from .utils import slugify
 
+_PINECONE_K = 10
+_MAX_INTENTS = 10
+
+_SYSTEM_PREAMBLE = """\
+You are a strict trade-classification AI.
+ABSOLUTE RULES:
+1. Never confuse different trades. Electrician ≠ Mason ≠ Plumber ≠ Painter.
+2. Never force-fit. Wrong match = NONE. No "least wrong" answers.
+3. Output ONLY valid raw JSON. No markdown, no prose.
+4. Use real-world macro trade names (Electrician, Plumber, Mason, Carpenter…).
+"""
+
+
+def _parse_json(raw):
+    try:
+        text = str(raw).strip()
+        if "```json" in text:
+            text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()
+        elif "```" in text:
+            text = text.split("```", 1)[1].rsplit("```", 1)[0].strip()
+        return json.loads(text)
+    except Exception as e:
+        print(f"LLM JSON parse error: {e} | Raw: {str(raw)[:200]}")
+        return {}
+
 # --- LLM STRICT MODE FUNCTIONS ---
 
 def llm_select_best_match(user_input, candidates):
@@ -144,6 +169,119 @@ def analyze_worker_profile_hierarchical(description):
     except Exception as e:
         print(f"Analyze Hierarchy Failed: JSON Parse Failure: {e} | Raw Response: {response[:150]}...")
         return []
+
+
+def extract_and_classify_profile(description: str) -> dict:
+    prompt = f"""\
+Worker description: "{description}"
+
+Analyze this description and output ONE JSON object with these keys:
+"jobs": list of distinct trade tasks the worker performs.
+    Each: {{"category": "Trade", "task": "2-4 word task name"}}
+"tools": list of macro-level reusable tools mentioned or implied.
+    Each: {{"name": "Generic Tool Name", "trade": "which trade uses it"}}
+"excluded_trades": list of trades the worker explicitly said they do NOT do.
+
+Example:
+{{
+    "jobs": [{{"category": "Electrician", "task": "Wire Repair"}}],
+    "tools": [{{"name": "Voltage Tester", "trade": "Electrician"}}],
+    "excluded_trades": ["Mason"]
+}}
+JSON:"""
+    try:
+        raw = run_llm(_SYSTEM_PREAMBLE + "\n" + prompt, max_new_tokens=800)
+        data = _parse_json(raw)
+        if not isinstance(data, dict):
+            return {"jobs": [], "tools": [], "excluded_trades": []}
+        return {
+            "jobs": [j for j in data.get("jobs", []) if isinstance(j, dict) and j.get("category") and j.get("task")],
+            "tools": [t for t in data.get("tools", []) if isinstance(t, dict) and t.get("name")],
+            "excluded_trades": data.get("excluded_trades", []),
+        }
+    except Exception as e:
+        print(f"extract_and_classify_profile error: {e}")
+        return {"jobs": [], "tools": [], "excluded_trades": []}
+
+
+def batch_judge_cw_candidates(jobs_with_candidates: list) -> dict:
+    if not jobs_with_candidates: return {}
+    blocks = []
+    for item in jobs_with_candidates:
+        cands = item.get("candidates", [])
+        if not cands: continue
+        lines = [f'  {i+1}. ID:{c["id"]} | {c.get("category","?")} -> {c.get("name","?")}' for i, c in enumerate(cands)]
+        blocks.append(f'INTENT {item["idx"]}: {item["category"]} / {item["task"]}\n' + '\n'.join(lines))
+        
+    prompt = f"""\
+For each INTENT below, decide if any candidate is a GENUINE match.
+Wrong trade or different task = NOT a match -> null.
+{chr(10).join(blocks)}
+Output JSON mapping index to matched ID or null: {{"0": "id_or_null"}}"""
+    
+    raw = run_llm(_SYSTEM_PREAMBLE + "\n" + prompt, max_new_tokens=300)
+    data = _parse_json(raw)
+    results = {int(k): (v if isinstance(v, str) and len(v)>4 else None) for k, v in (data or {}).items() if str(k).isdigit()}
+    for item in jobs_with_candidates: results.setdefault(item["idx"], None)
+    return results
+
+
+def batch_judge_tool_candidates(tools_with_candidates: list) -> dict:
+    if not tools_with_candidates: return {}
+    blocks = []
+    for item in tools_with_candidates:
+        cands = item.get("candidates", [])
+        if not cands: continue
+        lines = [f'  {i+1}. ID:{c["id"]} | {c.get("name","?")}' for i, c in enumerate(cands)]
+        blocks.append(f'TOOL {item["idx"]}: "{item["name"]}"\n' + '\n'.join(lines))
+        
+    prompt = f"""\
+For each TOOL below, decide if any candidate is FUNCTIONALLY IDENTICAL.
+{chr(10).join(blocks)}
+Output JSON mapping index to matched ID or null: {{"0": "id_or_null"}}"""
+    
+    raw = run_llm(_SYSTEM_PREAMBLE + "\n" + prompt, max_new_tokens=300)
+    data = _parse_json(raw)
+    results = {int(k): (v if isinstance(v, str) and len(v)>1 else None) for k, v in (data or {}).items() if str(k).isdigit()}
+    for item in tools_with_candidates: results.setdefault(item["idx"], None)
+    return results
+
+
+def batch_create_missing(missing_cws: list, missing_tools: list) -> dict:
+    if not missing_cws and not missing_tools: return {"cws": {}, "tools": {}}
+    cw_lines = [f'  CW{i["idx"]}: category="{i["category"]}" task="{i["task"]}"' for i in missing_cws]
+    tool_lines = [f'  TOOL{i["idx"]}: name="{i["name"]}" trade="{i.get("trade","")}"' for i in missing_tools]
+    
+    prompt = f"""\
+Generate canonical records for all items below.
+NEW CWS:\n{chr(10).join(cw_lines)}
+NEW TOOLS:\n{chr(10).join(tool_lines)}
+Output JSON with "cws" and "tools" mapping index to record:
+{{"cws": {{"0": {{"category":"...", "name":"...", "description":"..."}}}}, "tools": {{"0": {{"name":"...", "description":"..."}}}}}}"""
+    
+    raw = run_llm(_SYSTEM_PREAMBLE + "\n" + prompt, max_new_tokens=2000)
+    data = _parse_json(raw)
+    if not isinstance(data, dict): return {"cws": {}, "tools": {}}
+    return {
+        "cws": {int(k): v for k, v in data.get("cws", {}).items() if str(k).isdigit()},
+        "tools": {int(k): v for k, v in data.get("tools", {}).items() if str(k).isdigit()}
+    }
+
+
+def judge_category_match(canonical_name: str, candidates: list) -> str | None:
+    if not candidates: return None
+    lines = [f'{i+1}. ID:{c["id"]} | {c.get("metadata",{}).get("name","?")}' for i, c in enumerate(candidates)]
+    prompt = f"""Trade to find: "{canonical_name}"
+Candidates:
+{chr(10).join(lines)}
+Is any candidate the SAME trade?
+Reply ONLY with the integer index or NONE."""
+    res = run_llm(_SYSTEM_PREAMBLE + "\n" + prompt, max_new_tokens=5).strip().upper()
+    try:
+        idx = int(res)
+        if 1 <= idx <= len(candidates): return candidates[idx - 1].get("id")
+    except: pass
+    return None
 
 
 def llm_analyze_review(review_text, original_rating, primary_job):

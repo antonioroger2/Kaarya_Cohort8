@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
+import 'package:geolocator/geolocator.dart';
 import '../../features/user/booking_creation_screen.dart';
 import 'worker_profile_view_screen.dart';
 
@@ -8,6 +9,8 @@ class WorkerCard extends StatelessWidget {
   final String workerId;
   final String userId;
   final String userPin; 
+  final double? userLat;
+  final double? userLon;
 
   const WorkerCard({
     super.key,
@@ -15,6 +18,8 @@ class WorkerCard extends StatelessWidget {
     required this.workerId,
     required this.userId,
     required this.userPin,
+    this.userLat,
+    this.userLon,
   });
 
   static const Color _primaryAccent = Color(0xFF00695C); 
@@ -133,7 +138,24 @@ class WorkerCard extends StatelessWidget {
 
     final workerPin = _normalizePin(worker['pincode'] ?? "");
     final userPinNorm = _normalizePin(userPin);
-    final isLocal = userPinNorm.isNotEmpty && userPinNorm == workerPin;
+    final workerLat = (worker['lat'] as num?)?.toDouble();
+    final workerLon = (worker['lon'] as num?)?.toDouble();
+
+    bool isLocal = false;
+    double? distanceInKm;
+
+    if (userLat != null && userLon != null && workerLat != null && workerLon != null) {
+      final distanceInMeters = Geolocator.distanceBetween(
+        userLat!,
+        userLon!,
+        workerLat,
+        workerLon,
+      );
+      distanceInKm = distanceInMeters / 1000;
+      isLocal = distanceInKm <= 10.0;
+    } else {
+      isLocal = userPinNorm.isNotEmpty && userPinNorm == workerPin;
+    }
 
     return Card(
       elevation: 0,
@@ -263,7 +285,7 @@ class WorkerCard extends StatelessWidget {
                           Icon(Icons.location_on,
                               size: 10, color: _localAccent),
                           const SizedBox(width: 2),
-                          Text("Local",
+                          Text(distanceInKm != null ? "${distanceInKm.toStringAsFixed(1)} km" : "Local",
                               style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,

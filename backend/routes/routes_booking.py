@@ -1,9 +1,15 @@
 # routes_booking.py
 from flask import request, jsonify
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import uuid
+import json
+import re
+import urllib.parse
+from collections import defaultdict
+import numpy as np
+import requests
 from ..firebase_init import db
-from ..constants import COL_BOOKINGS, COL_WORKERS, COL_CW, COL_OTP
+from ..constants import COL_BOOKINGS, COL_WORKERS, COL_CW, COL_OTP, COL_CATEGORIES
 from ..utils import require_secret, sanitize_phone, gen_otp, hash_code, now_ts
 from ..config import FULL_MASK
 from ..canonical_work import get_or_create_global_canonical_work
@@ -12,6 +18,75 @@ from ..transactions import cancel_booking_in_transaction, accept_booking_in_tran
 from ..llm_functions import llm_analyze_review
 from google.cloud.firestore import FieldFilter
 from google.cloud.firestore_v1.transforms import Increment
+
+
+def _extract_json_object(raw):
+    text = str(raw).strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].rsplit("```", 1)[0].strip()
+    elif "```" in text:
+        text = text.split("```", 1)[1].rsplit("```", 1)[0].strip()
+    try:
+        return json.loads(text)
+    except Exception:
+        return {}
+
+
+def _clean_words(text):
+    return {w for w in re.split(r"[^a-z0-9]+", str(text).lower()) if w}
+
+
+def _keyword_overlap_score(user_query: str, meta: dict) -> float:
+    query_words = _clean_words(user_query)
+    if not query_words:
+        return 0.0
+
+    name_words = _clean_words(meta.get("category", ""))
+    cw_words = _clean_words(meta.get("canonicalWork", meta.get("name", "")))
+    tools_words: set[str] = set()
+    for tool in meta.get("requiredTools", []) or []:
+        tools_words |= _clean_words(tool)
+    desc_words = _clean_words(meta.get("description", ""))
+
+    weighted_score = (
+        len(query_words.intersection(name_words)) * 1.0
+        + len(query_words.intersection(cw_words)) * 1.0
+        + len(query_words.intersection(tools_words)) * 0.7
+        + len(query_words.intersection(desc_words)) * 0.6
+    )
+
+    return weighted_score / len(query_words)
+
+
+def _geocode_with_nominatim(locality: str, pin: str):
+    query = f"{locality} {pin} India".strip()
+    if not query:
+        return None
+
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {
+        "q": query,
+        "format": "json",
+        "limit": 1,
+    }
+
+    headers = {"User-Agent": "KaaryaBackend/1.0"}
+
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=8)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        if not data:
+            return None
+        lat = float(data[0].get("lat")) if data[0].get("lat") else None
+        lon = float(data[0].get("lon")) if data[0].get("lon") else None
+        if lat is None or lon is None:
+            return None
+        return lat, lon
+    except Exception as e:
+        print(f"[GEOCODE] error: {e}")
+        return None
 
 def register_booking_routes(app):
     @app.route("/cw/predict-multi", methods=["POST"])
@@ -23,35 +98,29 @@ def register_booking_routes(app):
         if not text:
             return jsonify({"error": "text required"}), 400
 
-        from ..llm_functions import analyze_worker_profile_hierarchical
-        ai_jobs = analyze_worker_profile_hierarchical(text)
+        from ..canonical_work import process_worker_profile
+
+        try:
+            cw_list = process_worker_profile(text)
+        except Exception as e:
+            print(f"[predict-multi] Error: {e}")
+            return jsonify({"error": str(e)}), 500
 
         results = []
         seen = set()
 
-        for job in ai_jobs:
-            cat = job.get("category")
-            task = job.get("task")
-            raw_tools = job.get("tools", [])
-
-            if not cat or not task: continue
-
-            key = f"{cat}_{task}"
-            if key in seen: continue
+        for cw_data in cw_list:
+            key = cw_data.get("cw_id")
+            if not key or key in seen:
+                continue
             seen.add(key)
 
-            try:
-                cw_data = get_or_create_global_canonical_work(cat, task, provided_tools=raw_tools)
-            except Exception as e:
-                print(f"Error fetching/creating CW: {e}")
-                continue
-
             results.append({
-                "category": cw_data['category'],
-                "task": cw_data['canonicalWork'],
-                "cw_id": cw_data["cw_id"],
-                "suggestedTools": cw_data["requiredTools"],
-                "aiSuggestedToolsFromProfile": cw_data["requiredTools"]
+                "category":                    cw_data["category"],
+                "task":                        cw_data["canonicalWork"],
+                "cw_id":                       cw_data["cw_id"],
+                "suggestedTools":              cw_data.get("requiredTools", []),
+                "aiSuggestedToolsFromProfile": cw_data.get("requiredTools", []),
             })
 
         return jsonify({"predictions": results}), 200
@@ -61,49 +130,155 @@ def register_booking_routes(app):
     def predict_canonical_work():
         data = request.json
         text = data.get("text")
+        user_pincode = data.get("pincode")
 
         if not text:
             return jsonify({"error": "text required"}), 400
 
-        from ..ai_utils import pinecone_embed_text, pinecone_query
-        from ..llm_functions import llm_select_best_match, llm_generate_new_entity
+        from ..ai_utils import pinecone_embed_text, pinecone_query, run_llm
+        from ..llm_functions import (
+            llm_select_best_match,
+            extract_and_classify_profile,
+            batch_judge_cw_candidates,
+            judge_category_match,
+        )
 
         try:
+            # 1) Local constraints (optional)
+            local_services: set[str] = set()
+            if user_pincode:
+                local_workers = (
+                    db.collection(COL_WORKERS)
+                    .where(filter=FieldFilter("pincode", "==", user_pincode))
+                    .where(filter=FieldFilter("isActive", "==", True))
+                    .stream()
+                )
+                for worker in local_workers:
+                    cw_data_map = worker.to_dict().get("cw_data", {}) or {}
+                    for _, task_map in cw_data_map.items():
+                        if not isinstance(task_map, dict):
+                            continue
+                        for _, cw_info in task_map.items():
+                            name = cw_info.get("name")
+                            if name:
+                                local_services.add(str(name).lower())
+
+            top_k_recall = 40
+            max_rerank = 10
+            W1 = 0.25  # Pinecone weight
+            W2 = 0.65  # LLM weight (intentionally high)
+
+            print(f"[/cw/predict] text='{text[:200]}' local_filter={'on' if local_services else 'off'}")
+
+            primary_cat = None
+            primary_task = None
+            try:
+                profile = extract_and_classify_profile(text)
+                jobs = profile.get("jobs", []) or []
+                if jobs:
+                    primary_cat = jobs[0].get("category")
+                    primary_task = jobs[0].get("task")
+            except Exception as e:
+                print(f"[predict] profile extract fallback: {e}")
+
             embedding = pinecone_embed_text(text)
+            base_filter = {"type": "job"}
+            pinecone_candidates = pinecone_query(embedding, top_k=top_k_recall, filter_dict=base_filter)
+            print(f"[/cw/predict] base candidates: {len(pinecone_candidates)}")
 
-            matches = pinecone_query(embedding, top_k=3, filter_dict={"type": "job"})
+            # Local post-filter on pinecone results if pincode provided
+            if user_pincode and local_services:
+                filtered_candidates = []
+                for cand in pinecone_candidates:
+                    cand_task = (cand.get("metadata", {}) or {}).get("canonicalWork", "") or (cand.get("metadata", {}) or {}).get("name", "")
+                    if str(cand_task).lower() in local_services:
+                        filtered_candidates.append(cand)
+                if filtered_candidates:
+                    pinecone_candidates = filtered_candidates
+                print(f"[/cw/predict] after local filter: {len(pinecone_candidates)}")
 
-            selected_cw_data = None
-            selected_cw_id = None
+            # Category-first recall to cut cross-trade bleed
+            cat_filter = None
+            if primary_cat:
+                cat_emb = pinecone_embed_text(primary_cat)
+                cat_matches = pinecone_query(cat_emb, top_k=10, filter_dict={"type": "category"})
+                match_id = judge_category_match(primary_cat, cat_matches)
+                if match_id:
+                    cat_doc = db.collection(COL_CATEGORIES).document(match_id).get().to_dict()
+                    if cat_doc:
+                        cat_filter = {"type": "job", "category_id": cat_doc.get("category_id")}
 
-            if matches:
-                selected_cw_id = llm_select_best_match(text, matches)
-                if selected_cw_id:
-                    selected_cw_data = db.collection(COL_CW).document(selected_cw_id).get().to_dict()
+            if cat_filter:
+                job_query_text = f"{primary_cat} {primary_task}" if primary_task else text
+                pinecone_candidates.extend(pinecone_query(pinecone_embed_text(job_query_text), top_k=25, filter_dict=cat_filter))
+                pinecone_candidates.extend(pinecone_query(pinecone_embed_text(text), top_k=15, filter_dict=cat_filter))
+                print(f"[/cw/predict] cat-filter applied; total candidates now {len(pinecone_candidates)}")
 
-            if selected_cw_data:
-                return jsonify({
-                    "category": selected_cw_data['category'],
-                    "task": selected_cw_data['canonicalWork'],
-                    "cw_id": selected_cw_data["cw_id"],
-                    "suggestedTools": selected_cw_data["requiredTools"]
-                }), 200
-            else:
-                print(f"COLD START: Generating new CW for notes: {text}")
+            # Group by (category, canonicalWork) and keep top 2 from each
+            grouped: dict[tuple[str, str], list] = defaultdict(list)
+            for cand in pinecone_candidates:
+                meta = cand.get("metadata", {}) or {}
+                key = (meta.get("category", ""), meta.get("canonicalWork", meta.get("name", "")))
+                grouped[key].append(cand)
 
-                category, cw_name, description = llm_generate_new_entity(text, "cw")
+            deduped = []
+            for items in grouped.values():
+                deduped.extend(sorted(items, key=lambda x: x.get("score", 0), reverse=True)[:2])
 
-                if not cw_name:
-                    return jsonify({"error": "Failed to generate canonical work"}), 500
+            deduped = sorted(deduped, key=lambda x: x.get("score", 0), reverse=True)[:max_rerank]
 
-                global_cw = get_or_create_global_canonical_work(category, cw_name)
+            if not deduped:
+                print("[/cw/predict] deduped empty -> 404")
+                return jsonify({"error": "No canonical work available"}), 404
 
-                return jsonify({
-                    "category": global_cw['category'],
-                    "task": global_cw['canonicalWork'],
-                    "cw_id": global_cw["cw_id"],
-                    "suggestedTools": global_cw["requiredTools"]
-                }), 200
+            # LLM rerank with explicit scoring output
+            lines = []
+            for idx, cand in enumerate(deduped):
+                meta = cand.get("metadata", {}) or {}
+                lines.append(
+                    f"{idx+1}. ID:{cand.get('id')} | Category:{meta.get('category','?')} | Task:{meta.get('canonicalWork', meta.get('name','?'))} | Desc:{meta.get('description','')[:180]}"
+                )
+
+            prompt = f"""
+User request: "{text}"
+Candidates:
+{chr(10).join(lines)}
+Score each candidate from 0.0 to 1.0 for how well it matches. Return ONLY JSON object mapping index to score. Higher = better.
+"""
+            raw_scores = run_llm(prompt, max_new_tokens=200)
+            llm_scores = _extract_json_object(raw_scores)
+
+            scored = []
+            llm_score_map = {}
+            for idx, cand in enumerate(deduped, start=1):
+                meta = cand.get("metadata", {}) or {}
+                pine_score_raw = float(cand.get("score", 0.0))
+                pine_score = float(np.tanh(pine_score_raw))  # squash any large similarity values
+                llm_score = float(llm_scores.get(str(idx), 0.0) or llm_scores.get(idx, 0.0) or 0.0)
+                overlap = _keyword_overlap_score(text, meta)
+                total = (W1 * pine_score) + (W2 * llm_score) + overlap
+                llm_score_map[cand.get("id")] = llm_score
+                scored.append((total, cand))
+
+            scored.sort(key=lambda x: x[0], reverse=True)
+            winner = scored[0][1]
+            winner_doc = db.collection(COL_CW).document(winner.get("id")).get().to_dict()
+
+            if not winner_doc:
+                print(f"[/cw/predict] winner_doc missing for id {winner.get('id')}")
+                return jsonify({"error": "No canonical work available"}), 404
+
+            return jsonify({
+                "category": winner_doc["category"],
+                "task": winner_doc["canonicalWork"],
+                "cw_id": winner_doc["cw_id"],
+                "suggestedTools": winner_doc.get("requiredTools", []),
+                "_debug": {
+                    "pinecone_score": winner.get("score", 0.0),
+                    "llm_score": llm_score_map.get(winner.get("id"), 0.0),
+                    "overlap_score": _keyword_overlap_score(text, winner_doc),
+                },
+            }), 200
 
         except Exception as e:
             print(f"Predict CW Error: {e}")
@@ -131,12 +306,49 @@ def register_booking_routes(app):
             print(f"Normalize Tool Error: {e}")
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/workers/geocode", methods=["POST"])
+    @require_secret
+    def geocode_worker():
+        data = request.json or {}
+        worker_id = data.get("workerId")
+        pin = (data.get("pincode") or "").strip()
+        locality = (data.get("locality") or "").strip()
+
+        if not worker_id:
+            return jsonify({"error": "workerId required"}), 400
+        if not pin:
+            return jsonify({"error": "pincode required"}), 400
+
+        geo = _geocode_with_nominatim(locality, pin)
+        if not geo:
+            return jsonify({"error": "Geocoding failed"}), 502
+
+        lat, lon = geo
+
+        try:
+            db.collection(COL_WORKERS).document(worker_id).update({
+                "lat": lat,
+                "lon": lon,
+            })
+            return jsonify({"ok": True, "lat": lat, "lon": lon}), 200
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/create-booking", methods=["POST"])
     @require_secret
     def create_booking():
         data = request.json
         user_id = data.get("userId")
         candidate_workers_input = data.get("candidateWorkers", [])
+
+        # Normalize location fields coming from nested payloads
+        loc = data.get("location") or {}
+        if isinstance(loc, dict):
+            data["pincode"] = data.get("pincode") or loc.get("pin") or loc.get("pincode")
+            data["lat"] = data.get("lat") or loc.get("lat") or loc.get("latitude")
+            data["lon"] = data.get("lon") or loc.get("lng") or loc.get("lon") or loc.get("longitude")
+            # Keep address-ish fields if needed later
+            data.setdefault("location", loc)
 
         notes = data.get("notes", "")
         service_type = data.get("serviceType", "General").strip()
@@ -150,31 +362,121 @@ def register_booking_routes(app):
             is_ai_booking = True  # Tag as AI generated because no workers were manually provided
             
             if len(notes) < 20:
+                print(f"[AI BOOKING] Reject: short notes ({len(notes)} chars)")
                 return jsonify({"error": "Notes too short or no candidates provided"}), 400
 
+            user_pincode = data.get("pincode")
+            if not user_pincode:
+                print(f"[AI BOOKING] Reject: missing pincode. Payload keys: {list(data.keys())}")
+                return jsonify({"error": "Location/Pincode is required for Smart AI Booking"}), 400
+
+            # --- 1. GET LOCAL INVENTORY (FieldFilter to avoid deprecation) ---
+            local_workers = (
+                db.collection(COL_WORKERS)
+                .where(filter=FieldFilter("pincode", "==", user_pincode))
+                .where(filter=FieldFilter("isActive", "==", True))
+                .stream()
+            )
+
+            available_services: dict[str, str] = {}  # lower -> original
+            available_service_meta: dict[str, dict] = {}
+            worker_count = 0
+
+            for worker in local_workers:
+                worker_count += 1
+                w_data = worker.to_dict()
+                cw_data_map = w_data.get("cw_data", {}) or {}
+
+                # cw_data is stored as {category: {task_slug: info}} so flatten nested entries
+                for _, task_map in cw_data_map.items():
+                    if not isinstance(task_map, dict):
+                        continue
+                    for _, cw_info in task_map.items():
+                        cat = cw_info.get("category")
+                        name = cw_info.get("name")
+                        if cat and name:
+                            key = str(name).lower()
+                            available_services[key] = name
+                            available_service_meta[key] = cw_info
+
+            print(f"[/create-booking] pincode={user_pincode} available_workers={worker_count} unique_services={len(available_services)}")
+
+            if not available_services:
+                return jsonify({"error": "There are no workers currently available in your area."}), 400
+
+            # --- 2. VECTOR SEARCH & LOCAL POST-FILTERING ---
             from ..ai_utils import pinecone_embed_text, pinecone_query
-            from ..llm_functions import llm_select_best_match, llm_generate_new_entity
-            
+            from ..llm_functions import run_llm
+
             embedding = pinecone_embed_text(notes)
-            matches = pinecone_query(embedding, top_k=3, filter_dict={"type": "job"})
+            pinecone_candidates = pinecone_query(embedding, top_k=40, filter_dict={"type": "job"})
 
-            selected_cw_data = None
-            selected_cw_id = None
+            local_matches = []
+            seen_tasks = set()
 
-            if matches:
-                selected_cw_id = llm_select_best_match(notes, matches)
-                if selected_cw_id:
-                    selected_cw_data = db.collection(COL_CW).document(selected_cw_id).get().to_dict()
+            for cand in pinecone_candidates:
+                meta = cand.get("metadata", {}) or {}
+                cand_task = meta.get("canonicalWork", meta.get("name", ""))
+                cand_task_lower = str(cand_task).lower()
 
-            if selected_cw_data:
-                cw_data = selected_cw_data
-            else:
-                category, cw_name, description = llm_generate_new_entity(notes, "cw")
-                cw_data = get_or_create_global_canonical_work(category, cw_name)
+                if cand_task_lower in available_services and cand_task_lower not in seen_tasks:
+                    seen_tasks.add(cand_task_lower)
+                    local_matches.append(cand)
 
-            service_type = cw_data["canonicalWork"]
-            service_category = cw_data["category"]
-            required_tools = cw_data["requiredTools"]
+            local_matches = local_matches[:10]
+
+            if not local_matches:
+                return jsonify({"error": "No workers available - We do not have professionals for this specific category in your area."}), 400
+
+            top_pinecone_match = local_matches[0].get('metadata', {}).get('canonicalWork', 'Unknown')
+
+            # --- 3. STRICT LLM RERANKING ---
+            service_menu = "\n".join([
+                f"- Task: '{cand.get('metadata', {}).get('canonicalWork')}' (Category: '{cand.get('metadata', {}).get('category')}')" 
+                for cand in local_matches
+            ])
+
+            prompt = f"""
+            You are an intelligent dispatch routing engine.
+            User Request: "{notes}"
+            
+            Top Local Semantic Matches:
+            {service_menu}
+
+            Task: Find the single best 'Task' from the list that perfectly fulfills the User Request. 
+            
+            CRITICAL BOUNDARY RULES:
+            1. SYNONYMS ARE VALID: If the user asks for "babysit" and "Child Care" is available, this is a PERFECT match. Select it.
+            2. UNRELATED TRADES ARE INVALID: If the user asks for "babysit" and the only available services are "Tap Repair" or "Wiring", this is a FAIL. Do NOT force a bad match. You MUST return null.
+            3. DOMAIN STRICTNESS: Do not assign a plumber to watch kids. Do not assign a housekeeper to fix electrical panels. 
+            
+            You MUST output ONLY a valid JSON object. 
+            Schema: {{
+                "best_task": "string or null", 
+                "best_category": "string or null",
+                "reasoning": "A 1-sentence explanation of why you matched these, or why you returned null."
+            }}
+            """
+
+            raw_response = run_llm(prompt, max_new_tokens=150)
+            llm_choice = _extract_json_object(raw_response)
+
+            matched_task = llm_choice.get("best_task")
+            matched_task_lower = str(matched_task).lower() if matched_task else ""
+            reasoning = llm_choice.get("reasoning", "")
+            
+            print(f"[AI ROUTING] Decision: {matched_task} | Reason: {reasoning}")
+
+            if not matched_task or matched_task_lower == "null" or matched_task_lower not in available_services:
+                return jsonify({
+                    "error": f"No workers available - Best Match '{top_pinecone_match}' is not the perfect described category."
+                }), 400
+
+            real_matched_task = available_services[matched_task_lower]
+
+            service_type = real_matched_task
+            service_category = llm_choice.get("best_category") or available_service_meta.get(matched_task_lower, {}).get("category")
+            required_tools = available_service_meta.get(matched_task_lower, {}).get("requiredTools", []) or []
 
             data["serviceType"] = service_type
             data["serviceCategory"] = service_category
@@ -182,12 +484,20 @@ def register_booking_routes(app):
 
         final_candidates = candidate_workers_input
         if not final_candidates:
-            best_workers = get_best_workers_for_job(service_type, service_category, required_tools, top_k=10)
+            best_workers = get_best_workers_for_job(
+                cw_name=service_type,
+                cw_category=service_category,
+                required_tools=required_tools,
+                top_k=10,
+                pincode=data.get("pincode"),
+                lat=data.get("lat"),
+                lon=data.get("lon"),
+            )
             final_candidates = [w["workerId"] for w in best_workers]
             data["candidateWorkersDetails"] = best_workers
 
         if not final_candidates:
-            return jsonify({"error": "No suitable workers found"}), 400
+            return jsonify({"error": "No suitable workers found for this specific request in your area."}), 400
 
         try:
             date_str = data["date"]
@@ -221,6 +531,8 @@ def register_booking_routes(app):
                 "candidateWorkers": final_candidates,
                 "isAIGenerated": is_ai_booking,                # <--- AI Flag
                 "requestedWorkerCount": len(final_candidates), # <--- Worker Count
+                "createdAt": now_ts_val,
+                "updatedAt": now_ts_val,
             }
 
             batch = db.batch()
@@ -425,7 +737,11 @@ def register_booking_routes(app):
             if booking.get("status") != "w2":
                 return jsonify({"error": "Job not started"}), 400
 
-            worker_doc_snap = db.collection(COL_WORKERS).document(booking["workerId"]).get()
+            worker_id = booking.get("workerId")
+            if not worker_id:
+                return jsonify({"error": "Worker not found"}), 404
+
+            worker_doc_snap = db.collection(COL_WORKERS).document(worker_id).get()
             if not worker_doc_snap.exists:
                 return jsonify({"error": "Worker not found"}), 404
             w_doc = worker_doc_snap.to_dict()

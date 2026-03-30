@@ -26,14 +26,18 @@ def calculate_worker_score(worker, cw_name, required_tools):
         "globalRating": global_rating
     }
 
-def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=10):
+def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=10, pincode=None, lat=None, lon=None):
     candidates = []
 
     try:
-        docs = db.collection(COL_WORKERS)\
+        query = db.collection(COL_WORKERS)\
             .where(filter=FieldFilter("canonicalWorks", "array_contains", cw_name))\
-            .where(filter=FieldFilter("isActive", "==", True))\
-            .limit(50).stream()
+            .where(filter=FieldFilter("isActive", "==", True))
+
+        if pincode:
+            query = query.where(filter=FieldFilter("pincode", "==", pincode))
+
+        docs = query.limit(50).stream()
 
         for doc in docs:
             w = doc.to_dict()
@@ -56,7 +60,11 @@ def get_best_workers_for_job(cw_name, cw_category, required_tools, top_k=10):
 
     if cw_category and cw_category != "General":
         try:
-            all_docs = db.collection(COL_WORKERS).where(filter=FieldFilter("isActive", "==", True)).limit(200).stream()
+            fallback_query = db.collection(COL_WORKERS).where(filter=FieldFilter("isActive", "==", True))
+            if pincode:
+                fallback_query = fallback_query.where(filter=FieldFilter("pincode", "==", pincode))
+
+            all_docs = fallback_query.limit(200).stream()
 
             for doc in all_docs:
                 w = doc.to_dict()
